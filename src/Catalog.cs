@@ -260,7 +260,7 @@ internal static class Catalog
     {
         var also = new List<string>();
         if (mod.IsHub || mod.On == on) return also;
-        Rename(mod, on);
+        if (!Rename(mod, on)) return also; // a file is in use: mod.On stays as it was, so callers can tell
 
         if (withDependencies)
         {
@@ -270,21 +270,23 @@ internal static class Catalog
                 foreach (var dep in mod.Dependencies)
                 {
                     var m = Mods.FirstOrDefault(x => x.Guid == dep);
-                    if (m != null && !m.On) { Rename(m, true); also.Add(m.Name); }
+                    if (m != null && !m.On && Rename(m, true)) also.Add(m.Name);
                 }
             }
             else
             {
                 // Turning off: mods that need it can't load either.
                 foreach (var m in Mods.Where(x => x.On && !x.IsHub && mod.Guid != null && x.Dependencies.Contains(mod.Guid)))
-                { Rename(m, false); also.Add(m.Name); }
+                    if (Rename(m, false)) also.Add(m.Name);
             }
         }
         return also;
     }
 
-    private static void Rename(Mod mod, bool on)
+    /// <summary>Renames a mod's DLLs. False when one couldn't be renamed: mod.On then stays as it was (the next scan reads the real state).</summary>
+    private static bool Rename(Mod mod, bool on)
     {
+        bool ok = true;
         var files = mod.IsFolder
             ? Directory.GetFiles(mod.Path, on ? "*.dll" + OffSuffix : "*.dll", SearchOption.AllDirectories)
             : new[] { mod.Path };
@@ -303,11 +305,16 @@ internal static class Catalog
                 File.Move(f, target);
                 if (!mod.IsFolder) mod.Path = target;
             }
-            catch (Exception e) { Plugin.Logger.LogWarning($"Could not switch {f}: {e.Message}"); }
+            catch (Exception e) { ok = false; Plugin.Logger.LogWarning($"Could not switch {f}: {e.Message}"); }
         }
+        if (!ok) return false;
         mod.On = on;
         Plugin.Logger.LogInfo($"{mod.Name}: turned {(on ? "on" : "off")} (from next launch).");
+        return true;
     }
+
+    /// <summary>Switches a mod or a character (characters are files, not DLLs). False when it couldn't be switched.</summary>
+    private static bool Switch(Mod mod, bool on) => mod.IsCharacter ? Characters.SetEnabled(mod, on) : Rename(mod, on);
 
     // ------------------------------------------------------------------ vanilla mode
 
@@ -316,13 +323,11 @@ internal static class Catalog
     {
         if (Vanilla) return;
         lock (StateLock) _state.VanillaRestore = Mods.Where(m => m.On && !m.IsHub).Select(m => m.Id).ToList();
+        int off = 0;
         foreach (var m in Mods.Where(m => m.On && !m.IsHub))
-        {
-            if (m.IsCharacter) Characters.SetEnabled(m, false); // characters are files, not DLLs
-            else Rename(m, false);
-        }
+            if (Switch(m, false)) off++;
         SaveState();
-        History.Add(History.VanillaOn, null, detail: _state.VanillaRestore.Count.ToString());
+        History.Add(History.VanillaOn, null, detail: off.ToString());
     }
 
     /// <summary>Turns back on exactly the mods that were on before vanilla mode.</summary>
@@ -331,11 +336,7 @@ internal static class Catalog
         if (!Vanilla) return;
         int back = 0;
         foreach (var m in Mods.Where(m => !m.On && _state.VanillaRestore.Contains(m.Id)))
-        {
-            if (m.IsCharacter) Characters.SetEnabled(m, true);
-            else Rename(m, true);
-            back++;
-        }
+            if (Switch(m, true)) back++;
         History.Add(History.VanillaOff, null, detail: back.ToString());
         lock (StateLock) _state.VanillaRestore = null;
         SaveState();
@@ -365,11 +366,7 @@ internal static class Catalog
         foreach (var m in Mods.Where(m => !m.IsHub))
         {
             bool want = ids.Contains(m.Id);
-            if (m.On == want) continue;
-            // Characters are switched by their json, not by DLLs (a character folder has no DLL to rename).
-            if (m.IsCharacter) Characters.SetEnabled(m, want);
-            else Rename(m, want);
-            changed++;
+            if (m.On != want && Switch(m, want)) changed++;
         }
         lock (StateLock) _state.VanillaRestore = null; // a profile replaces vanilla mode
         SaveState();

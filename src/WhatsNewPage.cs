@@ -28,6 +28,7 @@ internal static partial class Panel
     private static void OpenWhatsNew(List<Change> list, bool before)
     {
         _details = null;
+        _history = false;
         _whatsNew = list;
         _whatsNewBefore = before;
         _whatsNewScroll = 0;

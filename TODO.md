@@ -1,14 +1,14 @@
 # Mod Hub — TODO (task list for a coding agent)
 
-Source code is **not** in this repo (this repo only holds release zips). The source lives at:
+The source is in this repo:
 
 ```
-C:\Users\hmody\Documents\Megabonk Mods\ModHub\
-├─ src\              (the mod, C# / net6.0, BepInEx 6 IL2CPP plugin)
-├─ ModHub.csproj     (version is here)
-├─ build.ps1         (build + make the release zips in .\dist)
-└─ HANDOVER-ModHub.md (rules the author cares about — read it first)
+src\              (the mod, C# / net6.0, BepInEx 6 IL2CPP plugin)
+ModHub.csproj     (version is here, and in Plugin.Version)
+build.ps1         (build + make the release zips in .\dist)
 ```
+
+The rules the author cares about are in README.md.
 
 Build: `.\build.ps1` (or `dotnet build -c Release -p:GameDir="C:\Program Files (x86)\Steam\steamapps\common\Megabonk"`).
 All player-facing text goes through `L.T(english, arabic)` — both languages, always.
@@ -16,7 +16,7 @@ Never release without the author's OK.
 
 ---
 
-## 1. Activity history — a simple log of everything Mod Hub did
+## 1. Activity history — a simple log of everything Mod Hub did (DONE in 1.2.4)
 
 **Why.** Players forget what the Hub changed, and support questions are always "what did it install / remove?".
 There is no readable record today; only `BepInEx\LogOutput.log`, which is developer noise.
@@ -97,7 +97,7 @@ It is cosmetic, but it looks like the Hub broke something.
 
 ---
 
-## 5. Build hygiene: backup folders end up inside the DLL
+## 5. Build hygiene: backup folders end up inside the DLL (DONE in 1.2.4)
 
 **Why.** `ModHub.csproj` compiles every `**/*.cs` under the project, including `backup-*\` folders. A backup copy
 (`backup-1.2.2-before-whatsnew`) silently compiles its `.cs` files into `ModHub.dll`.
