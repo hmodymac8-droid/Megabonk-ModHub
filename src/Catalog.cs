@@ -356,7 +356,11 @@ internal static class Catalog
         foreach (var m in Mods.Where(m => !m.IsHub))
         {
             bool want = ids.Contains(m.Id);
-            if (m.On != want) { Rename(m, want); changed++; }
+            if (m.On == want) continue;
+            // Characters are switched by their json, not by DLLs (a character folder has no DLL to rename).
+            if (m.IsCharacter) Characters.SetEnabled(m, want);
+            else Rename(m, want);
+            changed++;
         }
         lock (StateLock) _state.VanillaRestore = null; // a profile replaces vanilla mode
         SaveState();
