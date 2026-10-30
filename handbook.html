@@ -1,0 +1,270 @@
+<title>Mod Hub Workbench</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Figtree:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: a single reading column with a sticky section index on wide screens; the Hub's own gold-on-dark ON/OFF pill language for status. */
+:root {
+  --bg: #f6f5f1; --panel: #ffffff; --ink: #1d1c19; --muted: #66625a; --line: #e2ded4;
+  --gold: #b88a00; --gold-soft: #fbf1cf; --on: #1f8a4c; --on-soft: #dff3e7; --off: #b23a3a; --off-soft: #f8e1df;
+  --code-bg: #efece4;
+  --display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --body: "Figtree", "Segoe UI", system-ui, sans-serif;
+  --mono: "JetBrains Mono", Consolas, "Courier New", monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #15161a; --panel: #1d1f24; --ink: #ecebe6; --muted: #a29e94; --line: #2e3038;
+  --gold: #f2c230; --gold-soft: #3a3115; --on: #4cc47f; --on-soft: #17331f; --off: #ef7b70; --off-soft: #3a1c1a;
+  --code-bg: #24262d; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #15161a; --panel: #1d1f24; --ink: #ecebe6; --muted: #a29e94; --line: #2e3038;
+  --gold: #f2c230; --gold-soft: #3a3115; --on: #4cc47f; --on-soft: #17331f; --off: #ef7b70; --off-soft: #3a1c1a;
+  --code-bg: #24262d; color-scheme: dark }
+
+body { background: var(--bg); color: var(--ink); font: 16px/1.6 var(--body); }
+.wrap { max-width: 1120px; margin: 0 auto; padding-block: 40px 80px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 48px; }
+@media (max-width: 860px) { .wrap { grid-template-columns: minmax(0, 1fr); gap: 24px; } nav.toc { position: static; } }
+nav.toc { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 24px); align-self: start; display: flex; flex-direction: column; gap: 2px; font-size: 14px; }
+nav.toc a { color: var(--muted); text-decoration: none; padding: 4px 10px; border-left: 2px solid var(--line); }
+nav.toc a:hover, nav.toc a:focus-visible { color: var(--ink); border-left-color: var(--gold); outline: none; }
+main { min-width: 0; display: flex; flex-direction: column; gap: 56px; }
+header h1 { font: 800 clamp(34px, 6vw, 54px)/1.05 var(--display); margin: 0; letter-spacing: -0.02em; text-wrap: balance; }
+header h1 span { color: var(--gold); }
+header p { color: var(--muted); max-width: 64ch; margin: 12px 0 0; }
+.keycap { font: 600 13px var(--mono); border: 1px solid var(--line); border-bottom-width: 3px; border-radius: 6px; padding: 1px 7px; background: var(--panel); }
+h2 { font: 700 26px/1.2 var(--display); margin: 0 0 16px; text-wrap: balance; }
+h3 { font: 600 17px/1.3 var(--body); margin: 24px 0 8px; }
+section > p, li { max-width: 72ch; }
+p { margin: 0 0 12px; }
+ul, ol { margin: 0 0 12px; padding-left: 22px; display: flex; flex-direction: column; gap: 6px; }
+code { font: 0.88em var(--mono); background: var(--code-bg); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+pre { font: 13px/1.55 var(--mono); background: var(--code-bg); padding: 14px 16px; border-radius: 8px; overflow-x: auto; margin: 0 0 12px; }
+a { color: var(--gold); }
+.eyebrow { font: 600 12px var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 6px; }
+
+.status { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-top: 24px; }
+.stat { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; }
+.stat b { font: 700 22px var(--display); font-variant-numeric: tabular-nums; }
+.stat small { color: var(--muted); font-size: 13px; }
+.pill { display: inline-block; font: 600 12px var(--body); padding: 2px 10px; border-radius: 999px; }
+.pill.on { background: var(--on-soft); color: var(--on); }
+.pill.off { background: var(--off-soft); color: var(--off); }
+.pill.gold { background: var(--gold-soft); color: var(--gold); }
+
+.table-scroll { overflow-x: auto; margin-bottom: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 9px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font: 600 12px var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+tr:last-child td { border-bottom: 0; }
+td.v { font: 600 14px var(--mono); white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+.rule { border-left: 3px solid var(--off); padding: 2px 0 2px 14px; margin-bottom: 10px; }
+.rule b { color: var(--off); }
+
+.prompt { position: relative; }
+.prompt pre { padding-top: 44px; white-space: pre-wrap; }
+.copy { position: absolute; top: 8px; right: 8px; font: 600 13px var(--body); background: var(--gold); color: #1d1c19; border: 0; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+.copy:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); padding-top: 16px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+<nav class="toc" aria-label="Sections">
+  <a href="#now">Where it stands</a>
+  <a href="#resume">Continue in a new chat</a>
+  <a href="#rules">House rules</a>
+  <a href="#paths">Folders &amp; commands</a>
+  <a href="#code">How the code is laid out</a>
+  <a href="#updates">Update checks (1.2.2)</a>
+  <a href="#release">Release checklist</a>
+  <a href="#history">Version history</a>
+  <a href="#bridge">Melon Bridge</a>
+  <a href="#installer">Installer</a>
+  <a href="#next">Open items &amp; ideas</a>
+  <a href="#credits">Credits</a>
+</nav>
+
+<main>
+<header>
+  <div class="eyebrow">Megabonk · BepInEx 6 IL2CPP · by AhmedHus21</div>
+  <h1>Mod Hub <span>Workbench</span></h1>
+  <p>Everything needed to keep developing Mod Hub, the in-game mod manager opened with <span class="keycap">F4</span> or <span class="keycap">L3 + R3</span>: what's released, where the code lives, how releases are done, and what's next. Last updated 23 Oct 2026, after the 1.2.2 release.</p>
+  <div class="status">
+    <div class="stat"><span class="eyebrow">Released</span><b>1.2.2</b><small>23 Oct 2026 · Nexus + GitHub</small></div>
+    <div class="stat"><span class="eyebrow">Virus scan</span><b><span class="pill on">Safe to use</span></b><small>Nexus mod 194, both files</small></div>
+    <div class="stat"><span class="eyebrow">Self-update</span><b>since 1.2.1</b><small>from GitHub releases</small></div>
+    <div class="stat"><span class="eyebrow">Thunderstore</span><b><span class="pill off">Rejected</span></b><small>the Hub itself, 20 Oct 2026</small></div>
+  </div>
+</header>
+
+<section id="now">
+  <h2>Where it stands</h2>
+  <ul>
+    <li><b>Mod Hub 1.2.2 is live</b> on <a href="https://www.nexusmods.com/megabonk/mods/194">Nexus mod 194</a> (both files: ModHub and the All-in-One, mod version 1.2.2) and on <a href="https://github.com/hmodymac8-droid/ModHub/releases/tag/v1.2.2">GitHub release v1.2.2</a>. Nexus virus scan: Safe to use.</li>
+    <li>Released DLL SHA-256 starts <code>9120C1D7</code>; All-in-One zip SHA-256 starts <code>fe5baf4a</code>. The user's game runs this exact build.</li>
+    <li><b>What 1.2.2 changed:</b> update detection takes the newer of Thunderstore and Nexus, re-checks every 15 minutes while the game is open, and Restart game restarts through Steam so Steam no longer sticks on "Stopping".</li>
+    <li><b>Not tested yet:</b> the Restart fallback when the game wasn't started from Steam, and the 15-minute re-check in a long session (it shows as the time on <code>BepInEx\cache\ModHub\thunderstore.json</code> changing).</li>
+    <li>Quest Tracker 1.3.0 is installed in the user's game (the Hub installed it from Thunderstore during the 1.2.2 test).</li>
+  </ul>
+</section>
+
+<section id="resume">
+  <h2>Continue in a new chat</h2>
+  <p>Open a Claude Code session in <code>C:\Users\hmody\Documents\Megabonk Mods</code> and paste this. Claude's memory folder for that project already holds the long notes; this page is the short version.</p>
+  <div class="prompt">
+    <button class="copy" id="copy-prompt" type="button">Copy</button>
+<pre id="prompt-text">Let's keep working on Mod Hub (Megabonk, BepInEx 6 IL2CPP), source in ModHub\ of this folder.
+Read the "Mod Hub Workbench" artifact and your memory notes (megabonk-mod-hub.md, mod-credits.md, game-close-rule.md, game-input-sharing.md) first.
+State: 1.2.2 released 23 Oct 2026 on Nexus 194 and GitHub hmodymac8-droid/ModHub (self-updates since 1.2.1).
+Rules: start the game via steam://rungameid/3405340 and close it only with the in-game EXIT; don't send clicks/keys while I'm at the PC, ask me to drive and only take screenshots; never release without my OK; keep the credits; keep "Mod Hub updates itself (since 1.2.1)" in What's new.
+Next: </pre>
+  </div>
+</section>
+
+<section id="rules">
+  <h2>House rules</h2>
+  <div class="rule"><b>Release only with the user's OK.</b> Every release goes to Nexus (both files) <i>and</i> a GitHub release with <code>ModHub-x.y.z.zip</code>, or self-update won't see it.</div>
+  <div class="rule"><b>Keep the self-update line.</b> Nexus "What's new" always keeps "Mod Hub updates itself (since 1.2.1)" and tells people on 1.2.0 or older to download 1.2.1+ once.</div>
+  <div class="rule"><b>Game start and close.</b> Start Megabonk through Steam (<code>steam://rungameid/3405340</code>); close it only with the in-game EXIT button. Never kill it: Steam gets stuck on "Stopping".</div>
+  <div class="rule"><b>Don't fight the user for input.</b> When they're at the PC, ask them to click; only take screenshots (<code>ArabicPack\tools\capture_game.ps1</code>, run with <code>-ExecutionPolicy Bypass</code>).</div>
+  <div class="rule"><b>No cmd / ping / PowerShell helpers in released mods.</b> Nexus quarantined 1.0.1 for a <code>cmd.exe</code> + <code>ping</code> delay.</div>
+  <div class="rule"><b>Never put a zip inside the All-in-One</b> (Nexus quarantines nested archives), and installer .exe files need Nexus manual review.</div>
+  <div class="rule"><b>BonkWithFriends stays 0.4.1</b> in the user's game: 0.5.2 + BonkWithFriendsFixes 1.0.0 crashes on load. Never press "Update all" blindly in tests.</div>
+  <div class="rule"><b>Thunderstore is not an option for the Hub itself</b> (rejected 20 Oct 2026). Other mods (Quest Tracker, Megabonk Arabic) are on Thunderstore as team AhmedHus21.</div>
+  <div class="rule"><b>Credits in every README and Nexus page</b>, sensei first (see Credits). Don't mention whose Claude account is used.</div>
+</section>
+
+<section id="paths">
+  <h2>Folders &amp; commands</h2>
+  <div class="table-scroll"><table>
+    <tr><th>What</th><th>Where</th></tr>
+    <tr><td>Source</td><td><code>C:\Users\hmody\Documents\Megabonk Mods\ModHub\src</code></td></tr>
+    <tr><td>Game</td><td><code>C:\Program Files (x86)\Steam\steamapps\common\Megabonk</code></td></tr>
+    <tr><td>Installed Hub</td><td><code>BepInEx\plugins\ModHub\ModHub.dll</code> (+ <code>plugins\MelonBridge</code>)</td></tr>
+    <tr><td>Hub state</td><td><code>BepInEx\config\ModHub.state.json</code> (sources, package versions, profiles, swaps)</td></tr>
+    <tr><td>Crash safety</td><td><code>BepInEx\config\ModHub.launch</code> / <code>ModHub.lastgood</code></td></tr>
+    <tr><td>Removed mods</td><td><code>BepInEx\_hub_removed</code> (nothing is ever deleted)</td></tr>
+    <tr><td>Release zips</td><td><code>ModHub\dist\ModHub-x.y.z.zip</code>, <code>…-AllInOne-with-BepInEx.zip</code>, <code>dist\parts</code> (9 MB pieces)</td></tr>
+    <tr><td>Nexus descriptions</td><td><code>ModHub\desc_122.txt</code> (live), older <code>desc_1xx.txt</code></td></tr>
+    <tr><td>Melon Bridge plan</td><td><code>Megabonk Mods\MELON_BRIDGE_PLAN.md</code></td></tr>
+  </table></div>
+  <h3>Build</h3>
+<pre>cd "C:\Users\hmody\Documents\Megabonk Mods\ModHub"
+.\build.ps1             # build + make both dist zips (ModHub first inside the zip)
+.\build.ps1 -Install    # also copy the DLL + Melon Bridge into the game (game must be closed)</pre>
+  <p>Version lives in two places: <code>ModHub.csproj</code> <code>&lt;Version&gt;</code> and <code>Plugin.Version</code> in <code>src/Plugin.cs</code>.</p>
+  <h3>Test switches</h3>
+  <ul>
+    <li><code>BepInEx\config\ModHub.updatefeed</code>: a URL that replaces GitHub's "latest release" (fake self-updates).</li>
+    <li><code>BepInEx\config\ModHub.storefeed</code>: a local file path or URL that replaces Thunderstore's mod list (simulate a stale list). Delete after testing.</li>
+  </ul>
+</section>
+
+<section id="code">
+  <h2>How the code is laid out</h2>
+  <div class="table-scroll"><table>
+    <tr><th>File</th><th>Job</th></tr>
+    <tr><td><code>Plugin.cs</code></td><td>BepInEx entry, config (open key), <code>HubBehaviour.Update</code> runs pending work, <code>Online.Tick</code>, panel and safety; <code>Restart()</code> via Steam.</td></tr>
+    <tr><td><code>Panel.cs</code></td><td>The window (IMGUI, only calls that survive Megabonk's stripping): tabs, mod rows, Update / Update all / Cancel update / Back to, banners, toasts. Every button goes through <code>Btn</code>.</td></tr>
+    <tr><td><code>Catalog.cs</code></td><td>Finds installed mods, ON/OFF by renaming <code>.dll</code> ↔ <code>.dll.off</code>, state file, swaps (kept copy after update).</td></tr>
+    <tr><td><code>Online.cs</code></td><td>Thunderstore list, Nexus GraphQL (game 7674), GitHub self-update, downloads; <code>Updates.Refresh</code> decides badges.</td></tr>
+    <tr><td><code>Installer.cs</code></td><td>Checks a zip/DLL (BepInEx IL2CPP only, Melon goes to the bridge), installs, retargets folders, records source.</td></tr>
+    <tr><td><code>Details.cs</code>, <code>Images.cs</code>, <code>WebP.cs</code></td><td>Mod details page, icons and screenshots; Nexus pictures are WebP, decoded with Windows WIC.</td></tr>
+    <tr><td><code>Profiles.cs</code></td><td>Profiles and <code>MODHUB-</code> share codes (private unpublished mods are left out).</td></tr>
+    <tr><td><code>Safety.cs</code></td><td>1 failed start = offer, 2 = auto-off; reverts a just-updated mod after 2 failed starts; counts log errors per mod.</td></tr>
+    <tr><td><code>Melon.cs</code></td><td>The Hub's side of Melon Bridge (melon-mods folder, tags, known-broken Nexus mods).</td></tr>
+    <tr><td><code>Pad.cs</code>, <code>Nav.cs</code></td><td>Controller: Rewired joysticks by button name, gold focus frame, A / B / LB / RB / RS, L3 + R3 opens.</td></tr>
+    <tr><td><code>KeyConflicts.cs</code></td><td>Warns when the chosen open key is used by the game or another mod's config.</td></tr>
+    <tr><td><code>Characters.cs</code></td><td>Custom characters/skins (<code>*.custom.json</code> + bundle) through the character loader.</td></tr>
+    <tr><td><code>Theme.cs</code>, <code>Rtl.cs</code>, <code>RtlShaper.cs</code></td><td>Look (rounded cards, gold buttons, ON/OFF pills) and Arabic shaping/right-to-left. All labels go through <code>L.T(english, arabic)</code>.</td></tr>
+  </table></div>
+  <p>Gotchas: the game's <code>LoadImage</code> wrapper is broken, so the Hub calls <code>ImageConversion::LoadImage_Injected</code> directly; installs run on background threads and hand results to the game thread through <code>Online.OnMain</code>.</p>
+</section>
+
+<section id="updates">
+  <h2>Update checks (1.2.2)</h2>
+  <p>The bug that started 1.2.2: Quest Tracker 1.3.0 was out, Nexus and Thunderstore's single-package API both said 1.3.0, but Thunderstore's full list (CDN-cached) still said 1.2.0, and the Hub only looked at Thunderstore when it had the package. A friend's Hub showed "up to date".</p>
+  <ol>
+    <li><b>Newer site wins.</b> <code>Updates.Refresh</code> compares the Thunderstore package and the Nexus mod against the version you have and offers the higher one.</li>
+    <li><b>Nexus ahead:</b> the button links to the Nexus files page, and <code>Online.CheckPackage</code> asks <code>thunderstore.io/api/experimental/package/&lt;owner&gt;/&lt;name&gt;/</code> once per Nexus version. If that has the version, it replaces the package in the list (kept even when a stale list is downloaded again) and the update installs in the Hub. While asking, clicking Update says "still checking".</li>
+    <li><b>Matching Nexus:</b> the package's <code>website_url</code> (<code>nexusmods.com/megabonk/mods/&lt;id&gt;</code>) gives the exact Nexus mod; otherwise same name and same author as the Thunderstore owner. The Hub itself always uses Nexus 194.</li>
+    <li><b>Freshness:</b> opening the Hub re-downloads lists older than 5 minutes; <code>Online.Tick</code> re-checks Thunderstore, Nexus and the GitHub release every 15 minutes while the game is open (after the first load). The 30-second retry wait after a failure still applies offline.</li>
+  </ol>
+  <p>Tested in game: stale list at 1.2.0, Quest Tracker swapped back to 1.1.2 → the Hub showed "Update 1.3.0", logged that Thunderstore's page said 1.3.0, and installed it in the Hub.</p>
+</section>
+
+<section id="release">
+  <h2>Release checklist</h2>
+  <ol>
+    <li>Bump the version in <code>ModHub.csproj</code> and <code>Plugin.cs</code>, run <code>.\build.ps1</code>, test in game.</li>
+    <li>Check the zips: <code>BepInEx/plugins/ModHub/ModHub.dll</code> is the first entry, its hash matches the tested DLL, no zip or exe inside the All-in-One.</li>
+    <li>Write <code>desc_1xx.txt</code>: English + Arabic "What's new", keep the self-update line and the credits.</li>
+    <li><b>GitHub:</b> <code>gh release create vX.Y.Z -R hmodymac8-droid/ModHub dist\ModHub-X.Y.Z.zip dist\ModHub-X.Y.Z-AllInOne-with-BepInEx.zip</code> with notes.</li>
+    <li><b>Nexus</b> (the user's Chrome, signed in as AhmedHus21): Files tab → set the zip into the "Add file" input → "Update existing file" → type in the "Select existing file" box and click the option → tick Archive existing file → File version → tick "Update mod version" → changelog → Save file. Don't use the per-row "Update" button.</li>
+    <li>The 33 MB All-in-One goes up in 4 pieces (<code>dist\parts</code>, 9 MB each, upload limit is 10 MB per call): put each into a helper file input, join them in the page as one Blob, check SHA-256, then set it into the real input with DataTransfer.</li>
+    <li>Description: Nexus uses SCEditor (<code>sceditor.instance(textarea).val()</code>); it adds <code>[/*]</code> after list items. Edit it in place, then Save.</li>
+    <li>Wait for the virus scan to say "Safe to use" (the big file takes about 10 minutes). Keep the user's own thumbnail when changing pictures; screenshots in English.</li>
+  </ol>
+</section>
+
+<section id="history">
+  <h2>Version history</h2>
+  <div class="table-scroll"><table>
+    <tr><th>Version</th><th>Date</th><th>What changed</th></tr>
+    <tr><td class="v">1.2.2</td><td>23 Oct</td><td>Newer of Thunderstore/Nexus, single-package re-check, 15-minute re-checks, Restart through Steam.</td></tr>
+    <tr><td class="v">1.2.1</td><td>23 Oct</td><td>Mod Hub updates itself from GitHub releases; a Mod Hub zip in Downloads no longer mistaken for Melon Bridge.</td></tr>
+    <tr><td class="v">1.2.0</td><td>22 Oct</td><td>Controller support (L3 + R3, D-pad, A/B, LB/RB, RS), Cancel install.</td></tr>
+    <tr><td class="v">1.1.1</td><td>22 Oct</td><td>Cancel update / Back to the old version, auto-rollback after a broken update. Installer exe built (archived on Nexus pending review).</td></tr>
+    <tr><td class="v">1.1.0</td><td>21 Oct</td><td>MelonLoader mods run through the bundled Melon Bridge.</td></tr>
+    <tr><td class="v">1.0.5</td><td>21 Oct</td><td>Modern redesign, "Open key" rebinding with conflict warnings.</td></tr>
+    <tr><td class="v">1.0.3</td><td>20 Oct</td><td>Bug hunt: state file lock, offline cooldown, silent Recycle Bin, stable rows.</td></tr>
+    <tr><td class="v">1.0.2</td><td>20 Oct</td><td>Restart without cmd/ping (1.0.1 was quarantined for that).</td></tr>
+    <tr><td class="v">1.0.0</td><td>20 Oct</td><td>First release: ON/OFF, vanilla mode, updates, Thunderstore + Nexus browsing and install, profiles.</td></tr>
+  </table></div>
+</section>
+
+<section id="bridge">
+  <h2>Melon Bridge</h2>
+  <p>Ships inside the Mod Hub downloads as its own plugin and can be switched off in the Hub. It converts MelonLoader mods (Cecil: <code>Il2CppX</code> → <code>X</code>), provides a stand-in <code>MelonLoader.dll</code> (MelonBase/Mod/Plugin, logger, preferences, coroutines, NativeHook) and a renamed <code>MelonBridge.Newtonsoft.Json</code>. Melon mods live in <code>BepInEx\melon-mods</code>. 68 of 71 surveyed Melon mods verify. Source and plan: <code>Megabonk Mods\MelonBridge</code>, <code>MELON_BRIDGE_PLAN.md</code>. BonkMenu is a cheat menu: never leave it installed.</p>
+</section>
+
+<section id="installer">
+  <h2>Installer</h2>
+  <p><code>ModHub\Installer</code> (net48 WinForms) embeds the All-in-One, finds the game through Steam libraries, backs up replaced files, verifies every file's SHA-256, English and Arabic. <code>Installer\test-installer.ps1</code> runs 11 tests. The build is byte-identical from any folder; public source at <a href="https://github.com/hmodymac8-droid/ModHub-Installer">ModHub-Installer</a>. Nexus quarantined the exe (executables need manual review); a review request was emailed to Nexus support on 22 Oct and is still waiting.</p>
+</section>
+
+<section id="next">
+  <h2>Open items &amp; ideas</h2>
+  <ul>
+    <li><span class="pill gold">Test</span> Restart fallback when the game wasn't started from Steam.</li>
+    <li><span class="pill gold">Test</span> The 15-minute re-check in a long session.</li>
+    <li><span class="pill gold">Waiting</span> Nexus review of the installer exe.</li>
+    <li><span class="pill gold">Idea</span> Mark Melon packages in Get mods more clearly; long refusal reasons get cut off in the toast (full text is in why.txt).</li>
+    <li><span class="pill gold">Idea</span> Steam Deck: Steam floating keyboard for search (Steamworks isn't ready at the first Hub tick, retry later).</li>
+    <li>More mod ideas are in Claude's memory note "Megabonk mod ideas" (9 multiplayer-safe ideas).</li>
+  </ul>
+</section>
+
+<section id="credits">
+  <h2>Credits</h2>
+  <p>Special thanks to <b>sensei</b>, friend and teacher. Thanks to <b>pinkpomelo</b>, the <b>BepInEx team</b>, <b>Il2CppInterop</b>, and <b>Harmony</b> by Andreas Pardeike (pardeike). Melon Bridge mirrors the API of <b>MelonLoader</b> by LavaGang and includes <b>Json.NET</b> by James Newton-King (MIT). Mod lists come from Thunderstore and Nexus Mods.</p>
+</section>
+
+<footer>Mod Hub by AhmedHus21 · Nexus <a href="https://www.nexusmods.com/megabonk/mods/194">mod 194</a> · GitHub <a href="https://github.com/hmodymac8-droid/ModHub">hmodymac8-droid/ModHub</a></footer>
+</main>
+</div>
+
+<script>
+document.getElementById('copy-prompt').addEventListener('click', function () {
+  var btn = this, text = document.getElementById('prompt-text').textContent;
+  function done(ok) { btn.textContent = ok ? 'Copied' : 'Select and copy'; setTimeout(function () { btn.textContent = 'Copy'; }, 2000); }
+  try {
+    navigator.clipboard.writeText(text).then(function () { done(true); }, function () { selectIt(); done(false); });
+  } catch (e) { selectIt(); done(false); }
+  function selectIt() { var r = document.createRange(); r.selectNodeContents(document.getElementById('prompt-text')); var s = getSelection(); s.removeAllRanges(); s.addRange(r); }
+});
+</script>

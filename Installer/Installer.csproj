@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- "Mod Hub Installer.exe": one file with the All-in-One inside. Targets .NET Framework 4.8, which every
+       Windows 10/11 already has, so players install nothing else. Build it with ModHub\build.ps1. -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <AssemblyName>Mod Hub Installer</AssemblyName>
+    <RootNamespace>ModHubInstaller</RootNamespace>
+    <Version>1.1.1</Version>
+    <Product>Mod Hub Installer</Product>
+    <Company>AhmedHus21</Company>
+    <Description>Installs Mod Hub (with BepInEx) for Megabonk</Description>
+    <Copyright>AhmedHus21</Copyright>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <!-- Reproducible: the same source + the same All-in-One zip give a byte-identical exe in any folder. -->
+    <Deterministic>true</Deterministic>
+    <DebugType>none</DebugType>
+    <PathMap>$(MSBuildProjectDirectory)=/src</PathMap>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <EnableSourceLink>false</EnableSourceLink>
+    <!-- The All-in-One zip that gets installed (passed in by build.ps1). -->
+    <Payload Condition="'$(Payload)' == ''">..\dist\payload.zip</Payload>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
+    <EmbeddedResource Include="$(Payload)" LogicalName="payload.zip" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,43 @@
+﻿MOD HUB - ALL-IN-ONE INSTALL (includes BepInEx)
+================================================
+
+1. In Steam, right-click Megabonk > Manage > Browse local files. The game folder opens.
+2. Extract EVERYTHING from this zip into that folder.
+   IMPORTANT: Windows "Extract All" suggests a NEW folder named after the zip. Delete that
+   extra name so the files go straight into the game folder. When you're done, winhttp.dll
+   and the BepInEx folder must sit right next to Megabonk.exe (not inside another folder).
+   If Windows asks to replace files, choose Yes.
+3. Start the game from Steam, WITH INTERNET ON. The FIRST start takes 1-3 minutes: a black window
+   shows text while BepInEx downloads a few Unity files and sets itself up. Don't close it.
+   Later starts are fast and don't need internet.
+4. On the main menu, press F4 to open Mod Hub.
+
+F4 does nothing?
+  - Check that winhttp.dll is next to Megabonk.exe (step 2).
+  - Stuck on "Downloading unity base libraries"? Turn internet on, close the game and start it again.
+  - Still nothing: send BepInEx\LogOutput.log to whoever helps you (it shows what went wrong).
+
+Already have BepInEx 6 (IL2CPP) for other mods? Use the smaller "ModHub" zip instead.
+
+Steam Deck / Linux (Proton): in Steam, Megabonk > Properties > Launch Options, paste:
+   WINEDLLOVERRIDES="winhttp=n,b" %command%
+
+To remove all mods: delete winhttp.dll from the game folder.
+To remove only Mod Hub: delete BepInEx\plugins\ModHub
+
+BepInEx is made by the BepInEx team (https://github.com/BepInEx/BepInEx), LGPL-2.1 license.
+
+------------------------------------------------
+التثبيت (نسخة All-in-One فيها BepInEx):
+1. من Steam: كليك يمين على Megabonk ثم Manage ثم Browse local files. يفتح لك مجلد اللعبة.
+2. فك ضغط كل محتويات الملف داخل مجلد اللعبة.
+   مهم: "Extract All" في ويندوز يقترح مجلد جديد باسم الملف. احذف هالاسم الزايد عشان الملفات
+   تنحط في مجلد اللعبة مباشرة. لازم يكون winhttp.dll ومجلد BepInEx جنب Megabonk.exe، مو داخل مجلد ثاني.
+   ولو سألك ويندوز عن استبدال الملفات، اختر Yes.
+3. شغّل اللعبة من Steam والإنترنت شغال. أول تشغيل ياخذ 1-3 دقايق: تطلع نافذة سوداء فيها كلام وهي تحمّل
+   ملفات Unity وتجهز BepInEx. لا تسكّرها. التشغيل اللي بعده سريع وما يحتاج إنترنت.
+4. في القائمة الرئيسية اضغط F4 لفتح Mod Hub.
+
+F4 ما يسوي شيء؟
+  - تأكد إن winhttp.dll جنب Megabonk.exe (الخطوة 2).
+  - لو للحين ما اشتغل: أرسل ملف BepInEx\LogOutput.log للي يساعدك (يوضح وش المشكلة).

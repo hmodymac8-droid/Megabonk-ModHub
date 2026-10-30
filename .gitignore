@@ -1,0 +1,18 @@
+# Build output
+bin/
+obj/
+dist/
+
+# Scratch / backups that must never be compiled or published
+backup-*/
+github-releases/
+nexus-review/
+
+# Release artifacts (zips and the installer exe are attached to GitHub releases)
+*.zip
+*.exe
+*.dll
+*.pdb
+
+# Local game logs / state
+LogOutput.log
