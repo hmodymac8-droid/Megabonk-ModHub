@@ -185,11 +185,12 @@ internal static class Characters
     }
 
     /// <summary>Installs a character zip into BepInEx\plugins\CustomCharacters. Returns the character's name.</summary>
-    public static string InstallCharacterZip(string zipPath)
+    /// <param name="source">Where it came from, for the history ("Thunderstore:Owner-Name", "Downloads", ...).</param>
+    public static string InstallCharacterZip(string zipPath, string source = null)
     {
         RestartNeeded = true;
         Directory.CreateDirectory(Dir);
-        return InstallZip(zipPath, Dir);
+        return InstallZip(zipPath, Dir, source);
     }
 
     /// <summary>Is a character (or skin) with this name already installed?</summary>
@@ -218,9 +219,12 @@ internal static class Characters
 
     /// <summary>The installed character loader, or null.</summary>
     public static Mod FindLoader() => Catalog.Mods.FirstOrDefault(m =>
-        m.Source == "Thunderstore:" + LoaderPackage ||
-        (m.Name ?? "").Replace(" ", "").IndexOf("CustomCharacter", StringComparison.OrdinalIgnoreCase) >= 0 ||
-        (m.Guid ?? "").IndexOf("CustomCharacter", StringComparison.OrdinalIgnoreCase) >= 0);
+        m.Source == "Thunderstore:" + LoaderPackage || IsLoader(m.Name, m.Guid));
+
+    /// <summary>Is this mod a character loader (the original or a community fix)?</summary>
+    public static bool IsLoader(string name, string guid) =>
+        (name ?? "").Replace(" ", "").IndexOf("CustomCharacter", StringComparison.OrdinalIgnoreCase) >= 0 ||
+        (guid ?? "").IndexOf("CustomCharacter", StringComparison.OrdinalIgnoreCase) >= 0;
 
     /// <summary>The folder the loader's DLL is in (characters go next to it).</summary>
     private static string LoaderDir(Mod loader)
@@ -356,6 +360,8 @@ internal static class Characters
                 if (on && isOff) File.Move(f, f.Substring(0, f.Length - OffTag.Length));
                 else if (!on && !isOff) File.Move(f, f + OffTag);
             }
+            mod.On = on; // the row says what it is now (the toast right after reads it)
+            if (!mod.IsFolder) mod.Path = on ? BaseJson(mod.Path) : (mod.Path.EndsWith(OffTag, StringComparison.OrdinalIgnoreCase) ? mod.Path : mod.Path + OffTag);
             RestartNeeded = true;
             Plugin.Logger.LogInfo($"Character {mod.Name} turned {(on ? "on" : "off")}.");
             return true;
@@ -401,6 +407,21 @@ internal static class Characters
         }
     }
 
+    /// <summary>"X.custom.json.off" -> "X.custom.json".</summary>
+    private static string BaseJson(string path) =>
+        path.EndsWith(OffTag, StringComparison.OrdinalIgnoreCase) ? path.Substring(0, path.Length - OffTag.Length) : path;
+
+    /// <summary>The version of the character installed in a folder (from its json), or null.</summary>
+    private static string VersionIn(string dir)
+    {
+        try
+        {
+            var json = Directory.GetFiles(dir, "*" + JsonEnd).Concat(Directory.GetFiles(dir, "*" + JsonEnd + OffTag)).FirstOrDefault();
+            return json == null ? null : VersionOf(File.ReadAllText(json));
+        }
+        catch { return null; }
+    }
+
     private static string SafeName(string s)
     {
         foreach (var ch in Path.GetInvalidFileNameChars()) s = s.Replace(ch, '_');
@@ -422,19 +443,23 @@ internal static class Characters
     }
 
     /// <summary>Copies loose character files into their own folder under the characters folder. Returns the character's name.</summary>
-    public static string InstallLoose(List<string> files, string rootDir)
+    public static string InstallLoose(List<string> files, string rootDir, string source = null)
     {
-        string name = NameOf(File.ReadAllText(files[0]), Path.GetFileName(files[0]).Replace(JsonEnd, ""));
+        string text = File.ReadAllText(files[0]);
+        string name = NameOf(text, Path.GetFileName(files[0]).Replace(JsonEnd, ""));
         RestartNeeded = true;
         string dest = FolderFor(rootDir, name);
+        bool existed = Directory.Exists(dest);
+        string old = existed ? VersionIn(dest) : null;
         Directory.CreateDirectory(dest);
         foreach (var f in files) File.Copy(f, Path.Combine(dest, Path.GetFileName(f)), true);
+        History.Add(existed ? History.CharacterUpdate : History.CharacterInstall, name, old, VersionOf(text), source);
         Plugin.Logger.LogInfo($"Installed custom character {name} into {dest}.");
         return name;
     }
 
     /// <summary>Extracts each character of a zip into its own folder under rootDir. Returns the character name(s).</summary>
-    public static string InstallZip(string zipPath, string rootDir)
+    public static string InstallZip(string zipPath, string rootDir, string source = null)
     {
         using var zip = ZipFile.OpenRead(zipPath);
         Directory.CreateDirectory(rootDir);
@@ -446,6 +471,8 @@ internal static class Characters
             using (var r = new StreamReader(json.Open())) text = r.ReadToEnd();
             string name = NameOf(text, json.Name.Replace(JsonEnd, ""));
             string dest = FolderFor(rootDir, name);
+            bool existed = Directory.Exists(dest);
+            string old = existed ? VersionIn(dest) : null; // read before the new files overwrite it
             Directory.CreateDirectory(dest);
             foreach (var e in zip.Entries.Where(e => e.Name.Length > 0 && e.FullName.StartsWith(folder) && !e.FullName.Substring(folder.Length).Contains('/')))
             {
@@ -453,6 +480,7 @@ internal static class Characters
                 if (lower.EndsWith(".txt") || lower.EndsWith(".md") || lower == "manifest.json" || lower == "icon.png") continue; // readme / package files
                 e.ExtractToFile(Path.Combine(dest, e.Name), true);
             }
+            History.Add(existed ? History.CharacterUpdate : History.CharacterInstall, name, old, VersionOf(text), source);
             names.Add(name);
         }
         Plugin.Logger.LogInfo($"Installed custom character(s) {string.Join(", ", names)} into {rootDir}.");

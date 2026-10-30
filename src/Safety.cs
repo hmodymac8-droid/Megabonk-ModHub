@@ -52,9 +52,15 @@ internal static class Safety
             {
                 // Just updated? Go back to the version that worked instead of losing the mod.
                 string back = CanGoBack(m) ? Catalog.SwapFor(m).OtherVersion : null;
-                if (back != null && Catalog.SwapVersion(m, out _)) { AutoReverted.Add($"{m.Name} {back}"); continue; }
+                if (back != null && Catalog.SwapVersion(m, out _))
+                {
+                    AutoReverted.Add($"{m.Name} {back}");
+                    History.Add(History.AutoBack, m.Name, m.Version, back);
+                    continue;
+                }
                 Catalog.Set(m, false, withDependencies: false);
                 AutoDisabled.Add(m.Name);
+                History.Add(History.AutoOff, m.Name);
             }
             Plugin.Logger.LogWarning("Mod Hub fixed them for the next start (went back to the previous version, or turned them off).");
         }
@@ -65,7 +71,12 @@ internal static class Safety
     public static void FixSuspects()
     {
         foreach (var m in Suspects)
-            if (!(CanGoBack(m) && Catalog.SwapVersion(m, out _))) Catalog.Set(m, false, withDependencies: false);
+        {
+            string back = CanGoBack(m) ? Catalog.SwapFor(m).OtherVersion : null;
+            if (back != null && Catalog.SwapVersion(m, out _)) { History.Add(History.SafetyBack, m.Name, m.Version, back); continue; }
+            Catalog.Set(m, false, withDependencies: false);
+            History.Add(History.SafetyOff, m.Name);
+        }
         Suspects = new();
     }
 

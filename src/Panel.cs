@@ -56,6 +56,7 @@ internal static partial class Panel
         _pickingKey = false;
         _details = null;
         _whatsNew = null;
+        _history = false;
         _searchFocused = false;
         _dragBar = false;
         if (Open)
@@ -321,11 +322,15 @@ internal static partial class Panel
 
     private static void DrawInstalled(Event e, Vector2 mouse, Rect body)
     {
+        if (_history) { DrawHistory(e, mouse, body); return; }
         if (_whatsNew != null) { DrawWhatsNew(e, mouse, body); return; }
         if (_details != null) { DrawDetails(e, mouse, body); return; }
         var mods = Catalog.Mods;
         Label(new Rect(body.x, body.y + 6f, body.width, 22f),
             L.T($"{mods.Count} mods found", $"تم العثور على {mods.Count} مود"), _small, Grey, left: true);
+
+        // What the Hub did (installs, updates, removals, switches): players paste it when asking for help.
+        if (Btn(new Rect(body.xMax - 538f, body.y, 130f, 30f), L.T("History", "السجل"), _button)) { OpenHistory(); return; }
 
         // Old copies and removed mods pile up in BepInEx\_hub_removed: let the player clear them (after a second click).
         if (Catalog.RemovedCount > 0)
@@ -339,7 +344,9 @@ internal static partial class Panel
                 if (sure)
                 {
                     _confirmRemove = null;
-                    Toast(Catalog.EmptyRemoved() ? L.T($"Freed {size}: removed mods and old versions are gone (\"Back to\" buttons too).", $"تم تفريغ {size}: انحذفت المودات والنسخ القديمة (وأزرار \"ارجع لـ\" معها).")
+                    bool emptied = Catalog.EmptyRemoved();
+                    if (emptied || Catalog.LockedInRemoved > 0) History.Add(History.Emptied, null, detail: size);
+                    Toast(emptied ? L.T($"Freed {size}: removed mods and old versions are gone (\"Back to\" buttons too).", $"تم تفريغ {size}: انحذفت المودات والنسخ القديمة (وأزرار \"ارجع لـ\" معها).")
                                                  : Catalog.LockedInRemoved > 0
                                                      ? L.T($"Freed the rest, but {Catalog.LockedInRemoved} file(s) are open in the running game. Close the game and empty it again.", $"تم تفريغ الباقي، لكن {Catalog.LockedInRemoved} ملف مفتوح في اللعبة. سكّر اللعبة وفرّغ مرة ثانية.")
                                                      : L.T("Could not empty it (a file is in use?).", "تعذر التفريغ (ملف مستخدم؟)."));
@@ -477,6 +484,7 @@ internal static partial class Panel
     {
         if (Catalog.Uninstall(m))
         {
+            History.Add(History.CancelInstall, m.Name);
             Catalog.ForgetInstalled(m.Id);
             Toast(L.T($"Install cancelled: {m.Name} is gone again. Nothing to restart.", $"تم إلغاء التثبيت: {m.Name} انشال. ما تحتاج تعيد التشغيل."));
         }
@@ -505,6 +513,7 @@ internal static partial class Panel
                 if (confirming)
                 {
                     bool removed = m.IsCharacter ? Characters.Remove(m) : Catalog.Uninstall(m);
+                    if (removed) History.Add(m.IsCharacter ? History.CharacterRemove : History.Remove, m.Name, m.Version);
                     if (removed) Toast(L.T($"{m.Name} removed (moved to BepInEx\\_hub_removed).", $"تم حذف {m.Name} (نُقل إلى BepInEx\\_hub_removed)."));
                     else Toast(L.T($"{m.Name} could not be removed: a file is still in use. Close the game and try again.", $"{m.Name}: تعذر الحذف، ملف لا يزال مستخدماً. سكّر اللعبة وحاول مرة ثانية."));
                     _confirmRemove = null;
@@ -544,13 +553,20 @@ internal static partial class Panel
                     Toast(L.T($"Couldn't switch {m.Name}: {error}", $"ما قدرت أبدّل {m.Name}: {error}"));
                 else if (cancel)
                 {
+                    History.Add(History.CancelUpdate, m.Name, from, to);
                     Catalog.ForgetInstalled(m.Id);
                     Toast(L.T($"Update cancelled: {m.Name} stays on {to}. Nothing to restart.", $"تم إلغاء التحديث: {m.Name} يبقى على {to}. ما تحتاج تعيد التشغيل."));
                 }
                 else if (swapNewer)
+                {
+                    History.Add(History.Redo, m.Name, from, to);
                     Toast(L.T($"{m.Name} updates to {to} after restart (from the saved copy, no download).", $"{m.Name} يتحدّث إلى {to} بعد إعادة التشغيل (من النسخة المحفوظة، بدون تحميل)."));
+                }
                 else
+                {
+                    History.Add(History.Back, m.Name, from, to);
                     Toast(L.T($"{m.Name} goes back to {to} after restart. You can update again any time.", $"{m.Name} يرجع إلى {to} بعد إعادة التشغيل. تقدر تحدّثه مرة ثانية متى ما تبي."));
+                }
                 Catalog.Scan();
                 Updates.Refresh();
                 return;
@@ -564,6 +580,8 @@ internal static partial class Panel
                 List<string> also;
                 if (m.IsCharacter) { Characters.SetEnabled(m, !m.On); also = new List<string>(); }
                 else also = Catalog.Set(m, !m.On);
+                History.Add(m.IsCharacter ? (m.On ? History.CharacterOn : History.CharacterOff) : (m.On ? History.On : History.Off),
+                            m.Name, detail: also.Count > 0 ? string.Join(", ", also) : null);
                 Toast((m.On ? L.T($"{m.Name} will be ON after restart.", $"{m.Name} بيشتغل بعد إعادة التشغيل.")
                             : L.T($"{m.Name} will be OFF after restart.", $"{m.Name} بينطفي بعد إعادة التشغيل."))
                       + (also.Count > 0 ? L.T($" Also changed: {string.Join(", ", also)}.", $" وتغير معه: {string.Join("، ", also)}.") : ""));
@@ -703,7 +721,7 @@ internal static partial class Panel
                         if (d.Check.IsCharacter)
                         {
                             string character = null;
-                            try { character = Characters.InstallCharacterZip(d.Path); }
+                            try { character = Characters.InstallCharacterZip(d.Path, "Downloads"); }
                             catch (Exception ex) { Plugin.Logger.LogWarning($"Character install failed for {d.Path}: {ex.Message}"); }
                             Toast(character != null
                                 ? L.T($"Installed the character {character}. Restart the game to play it.", $"تم تثبيت الشخصية {character}. أعد تشغيل اللعبة.") + (Characters.AfterInstall() ?? "")
