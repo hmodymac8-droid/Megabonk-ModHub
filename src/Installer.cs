@@ -337,6 +337,8 @@ internal static class Installer
             // The copy of this same mod is remembered, so the player can go back to it ("Back to vX").
             string previousCopy = null, previousVersion = null;
             var before = Catalog.Mods.FirstOrDefault(m => m.Id == id);
+            // The copy this install replaces, for the history: same folder, or the same mod under another folder name.
+            var replaced = before ?? (c.Guid != null ? Catalog.Mods.FirstOrDefault(m => m.Guid == c.Guid && !m.IsCharacter) : null);
             foreach (var folder in TopFolders(c).DefaultIfEmpty(c.FolderName))
             {
                 string old = Path.Combine(baseDir, folder);
@@ -375,7 +377,14 @@ internal static class Installer
                 }
             }
             if (source != null) Catalog.SetSource(id, source, packageVersion);
-            if (previousCopy != null && previousVersion != (packageVersion ?? c.Version)) Catalog.RememberUpdate(id, previousCopy, previousVersion);
+            bool kept = previousCopy != null && previousVersion != (packageVersion ?? c.Version);
+            if (kept) Catalog.RememberUpdate(id, previousCopy, previousVersion);
+            var flags = new List<string>();
+            if (kept) flags.Add("kept");
+            if (Characters.IsLoader(c.ModName, c.Guid)) flags.Add("loader");
+            History.Add(replaced == null ? History.Install : History.Update, c.ModName ?? c.FolderName,
+                        replaced == null ? null : Updates.HaveVersion(replaced), packageVersion ?? c.Version, source,
+                        flags.Count > 0 ? string.Join(",", flags) : null);
             Catalog.NoteInstalled(id);
             Plugin.Logger.LogInfo($"Installed {c.ModName} {c.Version} into {c.Base}{c.FolderName} (from {source ?? path}).");
             return id;

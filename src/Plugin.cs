@@ -113,7 +113,11 @@ public class HubBehaviour : MonoBehaviour
         { _whatsNewShown = true; Panel.ShowWhatsNew(); }
     }
 
-    public void OnApplicationQuit() => Safety.MarkGood(); // closed normally: this start was fine
+    public void OnApplicationQuit()
+    {
+        Safety.MarkGood(); // closed normally: this start was fine
+        History.Flush();   // the last entries, if the background save hasn't written them yet
+    }
 
     public void OnGUI()
     {

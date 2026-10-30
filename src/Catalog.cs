@@ -157,7 +157,11 @@ internal static class Catalog
         if (cleanDuplicates && stale.Count > 0)
         {
             foreach (var m in stale)
-                if (Uninstall(m)) Cleaned.Add($"{m.Name} {m.Version}".Trim());
+                if (Uninstall(m))
+                {
+                    Cleaned.Add($"{m.Name} {m.Version}".Trim());
+                    History.Add(History.Duplicate, m.Name, m.Version);
+                }
             Scan(false); // once only, so a copy that can't be moved just stays flagged
             return;
         }
@@ -318,17 +322,21 @@ internal static class Catalog
             else Rename(m, false);
         }
         SaveState();
+        History.Add(History.VanillaOn, null, detail: _state.VanillaRestore.Count.ToString());
     }
 
     /// <summary>Turns back on exactly the mods that were on before vanilla mode.</summary>
     public static void LeaveVanilla()
     {
         if (!Vanilla) return;
+        int back = 0;
         foreach (var m in Mods.Where(m => !m.On && _state.VanillaRestore.Contains(m.Id)))
         {
             if (m.IsCharacter) Characters.SetEnabled(m, true);
             else Rename(m, true);
+            back++;
         }
+        History.Add(History.VanillaOff, null, detail: back.ToString());
         lock (StateLock) _state.VanillaRestore = null;
         SaveState();
     }
@@ -343,6 +351,7 @@ internal static class Catalog
         var on = Mods.Where(m => m.On && !m.IsHub).Select(m => m.Id).ToList();
         lock (StateLock) _state.Profiles[name] = on;
         SaveState();
+        History.Add(History.ProfileSave, name, detail: on.Count.ToString());
         return on.Count;
     }
 
@@ -364,6 +373,7 @@ internal static class Catalog
         }
         lock (StateLock) _state.VanillaRestore = null; // a profile replaces vanilla mode
         SaveState();
+        History.Add(History.ProfileApply, name, detail: changed.ToString());
         return changed;
     }
 

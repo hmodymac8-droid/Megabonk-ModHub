@@ -396,7 +396,7 @@ internal static class Online
                     // Its loader came in as a dependency (CustomCharacterCreator), so nothing else to do here.
                     try
                     {
-                        string character = Characters.InstallCharacterZip(tmp);
+                        string character = Characters.InstallCharacterZip(tmp, "Thunderstore:" + p.FullName);
                         installed.Add(character);
                         Plugin.Logger.LogInfo($"Installed custom character {character} (Thunderstore:{p.FullName}).");
                         // A character without the loader dependency in its manifest still needs the loader.
@@ -617,7 +617,7 @@ internal static class LocalFiles
                     if (!set.All(ReadyToRead)) continue;
                     try
                     {
-                        string name = Characters.InstallLoose(set, Characters.Dir);
+                        string name = Characters.InstallLoose(set, Characters.Dir, "Drop folder");
                         messages.Add(L.T($"Installed the character {name}. Restart the game to play it.", $"تم تثبيت الشخصية {name}. أعد تشغيل اللعبة.") + (Characters.Warning() ?? ""));
                         foreach (var f in set) MoveTo(f, "installed");
                     }
@@ -627,7 +627,7 @@ internal static class LocalFiles
                 {
                     try
                     {
-                        string name = Characters.InstallZip(zip, Characters.Dir);
+                        string name = Characters.InstallZip(zip, Characters.Dir, "Drop folder");
                         messages.Add(L.T($"Installed the character {name}. Restart the game to play it.", $"تم تثبيت الشخصية {name}. أعد تشغيل اللعبة.") + (Characters.Warning() ?? ""));
                         MoveTo(zip, "installed");
                     }
