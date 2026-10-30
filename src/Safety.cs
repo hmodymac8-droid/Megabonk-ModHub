@@ -59,6 +59,7 @@ internal static class Safety
                     continue;
                 }
                 Catalog.Set(m, false, withDependencies: false);
+                if (m.On) continue; // a file was in use (logged): it stays on, so don't say it's off
                 AutoDisabled.Add(m.Name);
                 History.Add(History.AutoOff, m.Name);
             }
@@ -75,7 +76,7 @@ internal static class Safety
             string back = CanGoBack(m) ? Catalog.SwapFor(m).OtherVersion : null;
             if (back != null && Catalog.SwapVersion(m, out _)) { History.Add(History.SafetyBack, m.Name, m.Version, back); continue; }
             Catalog.Set(m, false, withDependencies: false);
-            History.Add(History.SafetyOff, m.Name);
+            if (!m.On) History.Add(History.SafetyOff, m.Name);
         }
         Suspects = new();
     }
@@ -98,7 +99,11 @@ internal static class Safety
 
     public static void TurnOffSuspects()
     {
-        foreach (var m in Suspects) Catalog.Set(m, false, withDependencies: false);
+        foreach (var m in Suspects)
+        {
+            Catalog.Set(m, false, withDependencies: false);
+            if (!m.On) History.Add(History.SafetyOff, m.Name);
+        }
         Suspects = new();
     }
 

@@ -92,7 +92,7 @@ internal static partial class Panel
     }
 
     /// <summary>Opens the Hub on the Installed tab to show the crash-safety message.</summary>
-    public static void ShowSafety() { if (!Open) Toggle(); _tab = 0; CloseDetails(); }
+    public static void ShowSafety() { if (!Open) Toggle(); _tab = 0; _history = false; _whatsNew = null; CloseDetails(); }
 
     private static float _watchDownloadsUntil, _nextDownloadsScan;
     private static bool _pickingKey;
@@ -577,14 +577,20 @@ internal static partial class Panel
             bx -= 100f;
             if (Btn(new Rect(bx, r.y + 15f, 94f, 32f), m.On ? L.T("ON", "شغال") : L.T("OFF", "مطفي"), m.On ? _pillOn : _pillOff))
             {
+                bool want = !m.On;
                 List<string> also;
-                if (m.IsCharacter) { Characters.SetEnabled(m, !m.On); also = new List<string>(); }
-                else also = Catalog.Set(m, !m.On);
-                History.Add(m.IsCharacter ? (m.On ? History.CharacterOn : History.CharacterOff) : (m.On ? History.On : History.Off),
-                            m.Name, detail: also.Count > 0 ? string.Join(", ", also) : null);
-                Toast((m.On ? L.T($"{m.Name} will be ON after restart.", $"{m.Name} بيشتغل بعد إعادة التشغيل.")
-                            : L.T($"{m.Name} will be OFF after restart.", $"{m.Name} بينطفي بعد إعادة التشغيل."))
-                      + (also.Count > 0 ? L.T($" Also changed: {string.Join(", ", also)}.", $" وتغير معه: {string.Join("، ", also)}.") : ""));
+                if (m.IsCharacter) { Characters.SetEnabled(m, want); also = new List<string>(); }
+                else also = Catalog.Set(m, want);
+                if (m.On != want) // the switch failed: m.On stays as it was
+                    Toast(L.T($"Couldn't switch {m.Name}: a file is in use. Close the game and try again.", $"ما قدرت أبدّل {m.Name}: ملف مستخدم. سكّر اللعبة وحاول مرة ثانية."));
+                else
+                {
+                    History.Add(m.IsCharacter ? (m.On ? History.CharacterOn : History.CharacterOff) : (m.On ? History.On : History.Off),
+                                m.Name, detail: also.Count > 0 ? string.Join(", ", also) : null);
+                    Toast((m.On ? L.T($"{m.Name} will be ON after restart.", $"{m.Name} بيشتغل بعد إعادة التشغيل.")
+                                : L.T($"{m.Name} will be OFF after restart.", $"{m.Name} بينطفي بعد إعادة التشغيل."))
+                          + (also.Count > 0 ? L.T($" Also changed: {string.Join(", ", also)}.", $" وتغير معه: {string.Join("، ", also)}.") : ""));
+                }
                 Catalog.Scan();
                 Updates.Refresh();
             }

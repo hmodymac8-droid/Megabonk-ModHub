@@ -18,7 +18,7 @@ public class Plugin : BasePlugin
 {
     public const string Guid = "modhub.megabonk";
     public const string Name = "Mod Hub";
-    public const string Version = "1.2.3";
+    public const string Version = "1.2.4";
 
     internal static ManualLogSource Logger;
     internal static ConfigEntry<KeyCode> OpenKey;

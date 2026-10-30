@@ -98,15 +98,11 @@ internal static class History
         });
     }
 
-    /// <summary>Called when the game closes: writes what the background thread may not have written yet.</summary>
-    public static void Flush()
-    {
-        if (!_dirty) return;
-        _dirty = false;
-        Write();
-    }
+    /// <summary>Called when the game closes: waits for a save in progress, then writes whatever isn't in the file yet.</summary>
+    public static void Flush() => Write();
 
     private static readonly object WriteLock = new(); // the background save and Flush at quit must not write at once
+    private static int _saved;                        // the value of Changes that's in the file
 
     private static void Write()
     {
@@ -115,11 +111,18 @@ internal static class History
             try
             {
                 string json;
-                lock (Lock) json = JsonSerializer.Serialize(_entries, new JsonSerializerOptions { WriteIndented = true });
+                int version;
+                lock (Lock)
+                {
+                    version = Changes;
+                    if (version == _saved) return; // nothing new (also: nothing was added this session)
+                    json = JsonSerializer.Serialize(_entries, new JsonSerializerOptions { WriteIndented = true });
+                }
                 // Write next to it first, so a crash halfway never leaves a broken file behind.
                 string tmp = FilePath + ".tmp";
                 File.WriteAllText(tmp, json);
                 File.Move(tmp, FilePath, true);
+                _saved = version;
             }
             catch (Exception e) { Plugin.Logger.LogDebug($"Could not save the Mod Hub history: {e.Message}"); }
         }
