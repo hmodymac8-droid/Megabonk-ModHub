@@ -25,6 +25,10 @@
   <ItemGroup>
     <Compile Remove="Installer\**" />
     <Compile Remove="nexus-review\**" />
+    <!-- Backup copies and output folders: their .cs files must never be compiled into ModHub.dll. -->
+    <Compile Remove="backup-*\**" />
+    <Compile Remove="github-releases\**" />
+    <Compile Remove="dist\**" />
     <EmbeddedResource Remove="Installer\**" />
     <None Remove="Installer\**" />
   </ItemGroup>
