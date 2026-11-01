@@ -31,22 +31,36 @@ if ($LASTEXITCODE -ne 0) { throw "Build failed" }
 $dll = "$root\bin\Release\net6.0\ModHub.dll"
 
 # Melon Bridge ships inside Mod Hub as its own plugin (runs MelonLoader mods; can be switched off in the Hub).
+# It lives in a separate project next to this one. Without it Mod Hub still builds, but the zips cannot run
+# MelonLoader mods, so they are named -noMelonBridge: a publishable zip must never come from a build without it.
 $bridgeRoot = Join-Path (Split-Path $root -Parent) "MelonBridge"
-dotnet build "$bridgeRoot\Plugin\MelonBridge.csproj" -c Release -nologo -p:GameDir="$GameDir"
-if ($LASTEXITCODE -ne 0) { throw "Melon Bridge build failed" }
-$bridgeBin = "$bridgeRoot\Plugin\bin\Release\net6.0"
-$bridgeFiles = @("$bridgeBin\MelonBridge.dll", "$bridgeBin\MelonLoader.dll", "$bridgeRoot\ThirdParty\MelonBridge.Newtonsoft.Json.dll",
-                 "$bridgeRoot\ThirdParty\Newtonsoft.Json-LICENSE.md", "$bridgeRoot\package\README.txt")
-$melonReadme = "$bridgeRoot\package\melon-mods README.txt"
+$haveBridge = Test-Path "$bridgeRoot\Plugin\MelonBridge.csproj"
+$bridgeFiles = @()
+$melonReadme = $null
+$noBridgeTag = if ($haveBridge) { "" } else { "-noMelonBridge" }
+if ($haveBridge) {
+    dotnet build "$bridgeRoot\Plugin\MelonBridge.csproj" -c Release -nologo -p:GameDir="$GameDir"
+    if ($LASTEXITCODE -ne 0) { throw "Melon Bridge build failed" }
+    $bridgeBin = "$bridgeRoot\Plugin\bin\Release\net6.0"
+    $bridgeFiles = @("$bridgeBin\MelonBridge.dll", "$bridgeBin\MelonLoader.dll", "$bridgeRoot\ThirdParty\MelonBridge.Newtonsoft.Json.dll",
+                     "$bridgeRoot\ThirdParty\Newtonsoft.Json-LICENSE.md", "$bridgeRoot\package\README.txt")
+    $melonReadme = "$bridgeRoot\package\melon-mods README.txt"
+}
+else {
+    Write-Warning "Melon Bridge not found at $bridgeRoot - building Mod Hub without it."
+    Write-Warning "These zips will NOT run MelonLoader mods. Do not publish them; restore the MelonBridge project first."
+}
 
 if ($Install) {
     $dest = "$GameDir\BepInEx\plugins\ModHub"
     New-Item -ItemType Directory -Force $dest | Out-Null
     Copy-Item $dll $dest -Force
-    New-Item -ItemType Directory -Force "$GameDir\BepInEx\plugins\MelonBridge", "$GameDir\BepInEx\melon-mods" | Out-Null
-    Copy-Item $bridgeFiles "$GameDir\BepInEx\plugins\MelonBridge" -Force
-    Copy-Item $melonReadme "$GameDir\BepInEx\melon-mods\README.txt" -Force
-    Write-Host "Installed to $dest (+ Melon Bridge)"
+        if ($haveBridge) {
+        New-Item -ItemType Directory -Force "$GameDir\BepInEx\plugins\MelonBridge", "$GameDir\BepInEx\melon-mods" | Out-Null
+        Copy-Item $bridgeFiles "$GameDir\BepInEx\plugins\MelonBridge" -Force
+        Copy-Item $melonReadme "$GameDir\BepInEx\melon-mods\README.txt" -Force
+        Write-Host "Installed to $dest (+ Melon Bridge)"
+    } else { Write-Host "Installed to $dest (no Melon Bridge)" }
 }
 
 $dist = "$root\dist"
@@ -59,10 +73,12 @@ $modOnly = "$stage\mod"
 New-Item -ItemType Directory -Force "$modOnly\BepInEx\plugins\ModHub" | Out-Null
 Copy-Item $dll "$modOnly\BepInEx\plugins\ModHub\"
 Copy-Item "$root\package\README.txt" "$modOnly\BepInEx\plugins\ModHub\"
-New-Item -ItemType Directory -Force "$modOnly\BepInEx\plugins\MelonBridge", "$modOnly\BepInEx\melon-mods" | Out-Null
-Copy-Item $bridgeFiles "$modOnly\BepInEx\plugins\MelonBridge\"
-Copy-Item $melonReadme "$modOnly\BepInEx\melon-mods\README.txt"
-New-Zip $modOnly "$dist\ModHub-$version.zip"
+if ($haveBridge) {
+    New-Item -ItemType Directory -Force "$modOnly\BepInEx\plugins\MelonBridge", "$modOnly\BepInEx\melon-mods" | Out-Null
+    Copy-Item $bridgeFiles "$modOnly\BepInEx\plugins\MelonBridge\"
+    Copy-Item $melonReadme "$modOnly\BepInEx\melon-mods\README.txt"
+}
+New-Zip $modOnly "$dist\ModHub-$version$noBridgeTag.zip"
 
 # 2) All-in-one: BepInEx + the mod, for first-time modders (one extract and done)
 $aio = "$stage\aio"
@@ -73,11 +89,15 @@ Copy-Item -Recurse "$GameDir\BepInEx\core" "$aio\BepInEx\core"
 # Unity's base libraries are NOT shipped: BepInEx needs them as a .zip, and Nexus quarantines a zip inside a zip
 # ("nested archives"). So the first start downloads them (needs internet once); INSTALL - READ ME.txt says so.
 Copy-Item "$root\package\INSTALL - READ ME.txt" "$aio\"
-New-Zip $aio "$dist\ModHub-$version-AllInOne-with-BepInEx.zip"
+New-Zip $aio "$dist\ModHub-$version$noBridgeTag-AllInOne-with-BepInEx.zip"
 
 # 3) Installer: one exe with exactly the All-in-One inside (finds the game through Steam, checks, installs, verifies)
-dotnet build "$root\Installer\Installer.csproj" -c Release -nologo -p:Payload="$dist\ModHub-$version-AllInOne-with-BepInEx.zip" -p:Version=$version
-if ($LASTEXITCODE -ne 0) { throw "Installer build failed" }
-Copy-Item "$root\Installer\bin\Release\net48\Mod Hub Installer.exe" "$dist\Mod Hub Installer $version.exe" -Force
+if ($haveBridge) {
+    dotnet build "$root\Installer\Installer.csproj" -c Release -nologo -p:Payload="$dist\ModHub-$version$noBridgeTag-AllInOne-with-BepInEx.zip" -p:Version=$version
+    if ($LASTEXITCODE -ne 0) { throw "Installer build failed" }
+    Copy-Item "$root\Installer\bin\Release\net48\Mod Hub Installer.exe" "$dist\Mod Hub Installer $version.exe" -Force
+} else {
+    Write-Warning "Skipped the installer: it embeds the All-in-One zip, which has no Melon Bridge here."
+}
 
 Get-ChildItem $dist | ForEach-Object { "{0}  ({1:N1} MB)" -f $_.Name, ($_.Length / 1MB) }
