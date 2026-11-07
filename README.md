@@ -18,14 +18,19 @@ thunderstore/           the Thunderstore edition's readme/changelog
 
 ## Build
 
-Needs the .NET SDK and a Megabonk install (the project references the game's BepInEx assemblies):
+Needs the **.NET 6 SDK or newer**, and Megabonk with **BepInEx 6 (IL2CPP)** started at least once (the project
+references the game's BepInEx files).
 
 ```
-dotnet build -c Release -p:GameDir="C:\Program Files (x86)\Steam\steamapps\common\Megabonk"
+powershell -ExecutionPolicy Bypass -File .\build.ps1             # build + zips in .\dist
+powershell -ExecutionPolicy Bypass -File .\build.ps1 -Install    # also copy it into your game (close the game first)
 ```
 
-`.\build.ps1` also makes `dist\ModHub-<version>.zip` and the All-in-One zip. It additionally builds **Melon Bridge**,
-a **separate project next to this one** (`..\MelonBridge`) — without it, packaging stops after the plugin build.
+The script asks Steam where Megabonk is installed, on any drive or library. If BepInEx isn't in the game folder
+(r2modman / Gale keep it in a profile), pass that folder: `-GameDir "C:\path\to\profile"` (the All-in-One zip is
+then skipped). It also builds **Melon Bridge** when the `MelonBridge` project sits next to this folder; without it
+the zips are named `-noMelonBridge` and must not be published. The installer exe is optional (.NET Framework 4.8
+Developer Pack); if it can't build, the zips are still made.
 
 ## Rules for changes
 
