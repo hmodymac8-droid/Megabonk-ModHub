@@ -2,7 +2,7 @@
 #   .\build.ps1             build + package
 #   .\build.ps1 -Install    also copy the DLL into your Megabonk BepInEx\plugins folder
 param(
-    [string]$GameDir = "C:\Program Files (x86)\Steam\steamapps\common\Megabonk",
+    [string]$GameDir = "",   # empty: the folder Steam uses for Megabonk (see game-dir.ps1)
     [switch]$Install
 )
 $ErrorActionPreference = "Stop"
@@ -23,6 +23,8 @@ function New-Zip([string]$SourceDir, [string]$ZipPath) {
     } finally { $zip.Dispose() }
 }
 $root = $PSScriptRoot
+. "$root\game-dir.ps1"
+$GameDir = Resolve-GameDir $GameDir
 [xml]$proj = Get-Content "$root\ModHub.csproj"
 $version = @($proj.Project.PropertyGroup | ForEach-Object { $_.Version } | Where-Object { $_ })[0]
 
@@ -52,10 +54,11 @@ else {
 }
 
 if ($Install) {
+    if (Get-Process Megabonk -ErrorAction SilentlyContinue) { throw "Megabonk is running: close it, then run this again (its files are in use)." }
     $dest = "$GameDir\BepInEx\plugins\ModHub"
     New-Item -ItemType Directory -Force $dest | Out-Null
     Copy-Item $dll $dest -Force
-        if ($haveBridge) {
+    if ($haveBridge) {
         New-Item -ItemType Directory -Force "$GameDir\BepInEx\plugins\MelonBridge", "$GameDir\BepInEx\melon-mods" | Out-Null
         Copy-Item $bridgeFiles "$GameDir\BepInEx\plugins\MelonBridge" -Force
         Copy-Item $melonReadme "$GameDir\BepInEx\melon-mods\README.txt" -Force
@@ -80,23 +83,33 @@ if ($haveBridge) {
 }
 New-Zip $modOnly "$dist\ModHub-$version$noBridgeTag.zip"
 
-# 2) All-in-one: BepInEx + the mod, for first-time modders (one extract and done)
-$aio = "$stage\aio"
-Copy-Item -Recurse $modOnly $aio
-foreach ($f in "winhttp.dll", "doorstop_config.ini", ".doorstop_version") { Copy-Item "$GameDir\$f" "$aio\" }
-Copy-Item -Recurse "$GameDir\dotnet" "$aio\dotnet"
-Copy-Item -Recurse "$GameDir\BepInEx\core" "$aio\BepInEx\core"
-# Unity's base libraries are NOT shipped: BepInEx needs them as a .zip, and Nexus quarantines a zip inside a zip
-# ("nested archives"). So the first start downloads them (needs internet once); INSTALL - READ ME.txt says so.
-Copy-Item "$root\package\INSTALL - READ ME.txt" "$aio\"
-New-Zip $aio "$dist\ModHub-$version$noBridgeTag-AllInOne-with-BepInEx.zip"
+# 2) All-in-one: BepInEx + the mod, for first-time modders (one extract and done). It copies BepInEx's loader from
+# the game folder, so it's skipped when BepInEx isn't installed there directly (r2modman / Gale keep it in a profile).
+$loaderFiles = @("winhttp.dll", "doorstop_config.ini", ".doorstop_version") | ForEach-Object { "$GameDir\$_" }
+$haveLoader = -not ($loaderFiles + "$GameDir\dotnet" | Where-Object { -not (Test-Path $_) })
+$aioZip = "$dist\ModHub-$version$noBridgeTag-AllInOne-with-BepInEx.zip"
+if ($haveLoader) {
+    $aio = "$stage\aio"
+    Copy-Item -Recurse $modOnly $aio
+    Copy-Item $loaderFiles "$aio\"
+    Copy-Item -Recurse "$GameDir\dotnet" "$aio\dotnet"
+    Copy-Item -Recurse "$GameDir\BepInEx\core" "$aio\BepInEx\core"
+    # Unity's base libraries are NOT shipped: BepInEx needs them as a .zip, and Nexus quarantines a zip inside a zip
+    # ("nested archives"). So the first start downloads them (needs internet once); INSTALL - READ ME.txt says so.
+    Copy-Item "$root\package\INSTALL - READ ME.txt" "$aio\"
+    New-Zip $aio $aioZip
+}
+else {
+    Write-Warning "Skipped the All-in-One zip and the installer: $GameDir has no winhttp.dll / dotnet folder (BepInEx installed by a mod manager?)."
+}
 
-# 3) Installer: one exe with exactly the All-in-One inside (finds the game through Steam, checks, installs, verifies)
-if ($haveBridge) {
-    dotnet build "$root\Installer\Installer.csproj" -c Release -nologo -p:Payload="$dist\ModHub-$version$noBridgeTag-AllInOne-with-BepInEx.zip" -p:Version=$version
-    if ($LASTEXITCODE -ne 0) { throw "Installer build failed" }
-    Copy-Item "$root\Installer\bin\Release\net48\Mod Hub Installer.exe" "$dist\Mod Hub Installer $version.exe" -Force
-} else {
+# 3) Installer: one exe with exactly the All-in-One inside (finds the game through Steam, checks, installs, verifies).
+# Optional: it needs the .NET Framework 4.8 targeting pack, which not every PC has.
+if ($haveBridge -and $haveLoader) {
+    dotnet build "$root\Installer\Installer.csproj" -c Release -nologo -p:Payload="$aioZip" -p:Version=$version
+    if ($LASTEXITCODE -eq 0) { Copy-Item "$root\Installer\bin\Release\net48\Mod Hub Installer.exe" "$dist\Mod Hub Installer $version.exe" -Force }
+    else { Write-Warning "The installer exe didn't build (it needs the .NET Framework 4.8 Developer Pack). The zips are fine." }
+} elseif ($haveLoader) {
     Write-Warning "Skipped the installer: it embeds the All-in-One zip, which has no Melon Bridge here."
 }
 

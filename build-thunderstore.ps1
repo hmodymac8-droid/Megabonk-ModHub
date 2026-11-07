@@ -1,11 +1,13 @@
 ﻿# Builds the Thunderstore edition of Mod Hub and its Thunderstore package in .\dist
 # (Thunderstore only: no Nexus, no drop folder or Downloads, no self-update - r2modman / Gale update it).
 #   .\build-thunderstore.ps1
-param([string]$GameDir = "C:\Program Files (x86)\Steam\steamapps\common\Megabonk")
+param([string]$GameDir = "")   # empty: the folder Steam uses for Megabonk (see game-dir.ps1)
 $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
 
 $root = $PSScriptRoot
+. "$root\game-dir.ps1"
+$GameDir = Resolve-GameDir $GameDir
 [xml]$proj = Get-Content "$root\ModHub.csproj"
 $version = @($proj.Project.PropertyGroup | ForEach-Object { $_.Version } | Where-Object { $_ })[0]
 
@@ -32,7 +34,7 @@ Copy-Item "$src\icon.png", "$src\README.md", "$src\CHANGELOG.md" $stage
 $manifest = [ordered]@{
     name           = "ModHub"
     version_number = $version
-    website_url    = "https://github.com/hmodymac8-droid/ModHub"
+    website_url    = "https://github.com/hmodymac8-droid/Megabonk-ModHub"
     description    = "In-game mod manager (F4): switch mods on/off, profiles, one-click installs and updates from Thunderstore, What's new notes, crash safety. English and Arabic."
     dependencies   = @("BepInEx-BepInExPack_IL2CPP-6.0.755")
 }
