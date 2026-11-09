@@ -29,8 +29,11 @@ powershell -ExecutionPolicy Bypass -File .\build.ps1 -Install    # also copy it 
 The script asks Steam where Megabonk is installed, on any drive or library. If BepInEx isn't in the game folder
 (r2modman / Gale keep it in a profile), pass that folder: `-GameDir "C:\path\to\profile"` (the All-in-One zip is
 then skipped). It also builds **Melon Bridge** when the `MelonBridge` project sits next to this folder; without it
-the zips are named `-noMelonBridge` and must not be published. The installer exe is optional (.NET Framework 4.8
-Developer Pack); if it can't build, the zips are still made.
+the zips (and the installer) are named `-noMelonBridge` and must not be published.
+
+`dist\Mod Hub Installer <version>.exe` holds the All-in-One zip: it finds the game through Steam, installs, checks
+every file, then starts the game and waits until Mod Hub says it loaded. Test it on fake game folders (never the real
+game) with `powershell -ExecutionPolicy Bypass -File .\Installer\test-installer.ps1 "dist\Mod Hub Installer <version>.exe"`.
 
 ## Rules for changes
 

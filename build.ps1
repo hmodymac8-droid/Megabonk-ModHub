@@ -103,14 +103,13 @@ else {
     Write-Warning "Skipped the All-in-One zip and the installer: $GameDir has no winhttp.dll / dotnet folder (BepInEx installed by a mod manager?)."
 }
 
-# 3) Installer: one exe with exactly the All-in-One inside (finds the game through Steam, checks, installs, verifies).
-# Optional: it needs the .NET Framework 4.8 targeting pack, which not every PC has.
-if ($haveBridge -and $haveLoader) {
+# 3) Installer: one exe with exactly the All-in-One inside (finds the game through Steam, checks, installs, verifies,
+# then starts the game and waits for Mod Hub to load). Without Melon Bridge it is named -noMelonBridge, like the zips.
+if ($haveLoader) {
+    $exeName = "Mod Hub Installer $version$noBridgeTag.exe"
     dotnet build "$root\Installer\Installer.csproj" -c Release -nologo -p:Payload="$aioZip" -p:Version=$version
-    if ($LASTEXITCODE -eq 0) { Copy-Item "$root\Installer\bin\Release\net48\Mod Hub Installer.exe" "$dist\Mod Hub Installer $version.exe" -Force }
-    else { Write-Warning "The installer exe didn't build (it needs the .NET Framework 4.8 Developer Pack). The zips are fine." }
-} elseif ($haveLoader) {
-    Write-Warning "Skipped the installer: it embeds the All-in-One zip, which has no Melon Bridge here."
+    if ($LASTEXITCODE -eq 0) { Copy-Item "$root\Installer\bin\Release\net48\Mod Hub Installer.exe" "$dist\$exeName" -Force }
+    else { Write-Warning "The installer exe didn't build (see the errors above). The zips are fine." }
 }
 
 Get-ChildItem $dist | ForEach-Object { "{0}  ({1:N1} MB)" -f $_.Name, ($_.Length / 1MB) }

@@ -17,25 +17,27 @@ internal static class GameFinder
 
     public static string Find()
     {
-        foreach (var lib in SteamLibraries())
+        var libs = SteamLibraries().ToList();
+        // Steam's own record of where the game is wins: an old "common\Megabonk" copy left in another library
+        // (after a move or a rename) must never be picked over the folder Steam actually starts.
+        foreach (var lib in libs)
         {
             try
             {
                 string apps = Path.Combine(lib, "steamapps");
                 string manifest = Path.Combine(apps, "appmanifest_" + AppId + ".acf");
-                if (File.Exists(manifest))
-                {
-                    var m = Regex.Match(File.ReadAllText(manifest), "\"installdir\"\\s+\"([^\"]+)\"");
-                    if (m.Success)
-                    {
-                        string dir = Path.Combine(apps, "common", m.Groups[1].Value);
-                        if (IsGameFolder(dir)) return dir;
-                    }
-                }
-                string plain = Path.Combine(apps, "common", "Megabonk");
-                if (IsGameFolder(plain)) return plain;
+                if (!File.Exists(manifest)) continue;
+                var m = Regex.Match(File.ReadAllText(manifest), "\"installdir\"\\s+\"([^\"]+)\"");
+                if (!m.Success) continue;
+                string dir = Path.Combine(apps, "common", m.Groups[1].Value);
+                if (IsGameFolder(dir)) return dir;
             }
             catch { /* unreadable library: try the next one */ }
+        }
+        foreach (var lib in libs)
+        {
+            string plain = Path.Combine(lib, "steamapps", "common", "Megabonk");
+            if (IsGameFolder(plain)) return plain;
         }
         return null;
     }

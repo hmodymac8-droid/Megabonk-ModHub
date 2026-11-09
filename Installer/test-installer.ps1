@@ -14,7 +14,7 @@ function Expect($name, $ok) { if ($ok) { "PASS  $name" } else { "FAIL  $name :: 
 function NewGame($n) { $d = "$T\$n"; New-Item -ItemType Directory -Force $d | Out-Null; Set-Content "$d\Megabonk.exe" "fake"; return $d }
 
 $g = NewGame "fresh"
-Expect "fresh install" ((Run "fresh" $g) -eq 0 -and (Test-Path "$g\winhttp.dll") -and (Test-Path "$g\BepInEx\plugins\ModHub\ModHub.dll") -and (Test-Path "$g\BepInEx\plugins\MelonBridge\MelonBridge.dll") -and -not (Test-Path "$g\INSTALL - READ ME.txt"))
+Expect "fresh install" ((Run "fresh" $g) -eq 0 -and (Test-Path "$g\winhttp.dll") -and (Test-Path "$g\BepInEx\plugins\ModHub\ModHub.dll") -and (($Exe -like "*-noMelonBridge*") -or (Test-Path "$g\BepInEx\plugins\MelonBridge\MelonBridge.dll")) -and -not (Test-Path "$g\INSTALL - READ ME.txt"))
 Expect "run again changes nothing" ((Run "again" $g) -eq 0 -and $script:last -match "installed=0 ")
 
 $u = NewGame "update"
@@ -46,7 +46,29 @@ Expect "locked file: retry works" ((Run "locked-retry" $k) -eq 0)
 $m = NewGame "melon"; New-Item -ItemType Directory -Force "$m\MelonLoader" | Out-Null; Set-Content "$m\version.dll" "ml"
 Expect "real MelonLoader: warned, still installs" ((Run "melon" $m) -eq 0 -and $script:last -match "otherMelonLoader=True")
 
+# "Did it work": the check reads the game's BepInEx\LogOutput.log (fake folders, no real game is started).
+function Verify($name, $dir, $log, $seconds) {
+    $out = "$T\$name.log"
+    $job = if ($log) { Start-Job { param($d, $text) Start-Sleep 3; Set-Content "$d\BepInEx\LogOutput.log" $text } -ArgumentList $dir, $log }
+    $p = Start-Process -FilePath $Exe -ArgumentList ("--verify --target `"$dir`" --seconds $seconds --log `"$out`"") -Wait -PassThru
+    if ($job) { $job | Wait-Job | Remove-Job }
+    $script:last = Get-Content $out -ErrorAction SilentlyContinue
+    return $p.ExitCode
+}
+$v = NewGame "verify-ok"; New-Item -ItemType Directory -Force "$v\BepInEx" | Out-Null
+Expect "check: Mod Hub loaded" ((Verify "verify-ok" $v "[Message: Preloader] BepInEx`n[Info   :   Mod Hub] Mod Hub 9.9.9 loaded. Press F4 to open it." 20) -eq 0 -and $script:last -match "Loaded version=9.9.9")
+$v = NewGame "verify-nohub"; New-Item -ItemType Directory -Force "$v\BepInEx" | Out-Null
+Expect "check: BepInEx runs, Mod Hub missing" ((Verify "verify-nohub" $v "[Error  :   BepInEx] Could not load [Mod Hub]`n[Message:   BepInEx] Chainloader startup complete" 20) -eq 4 -and $script:last -match "NoModHub" -and $script:last -match "Could not load")
+$v = NewGame "verify-nolog"; New-Item -ItemType Directory -Force "$v\BepInEx" | Out-Null; Set-Content "$v\BepInEx\LogOutput.log" "Mod Hub 1.0.0 loaded"; (Get-Item "$v\BepInEx\LogOutput.log").LastWriteTime = (Get-Date).AddDays(-1)
+Expect "check: an old log doesn't count" ((Verify "verify-nolog" $v $null 5) -eq 4 -and $script:last -match "NoBepInEx")
+
 $p = Start-Process -FilePath $Exe -ArgumentList ("--find --log `"$T\find.log`"") -Wait -PassThru
-Expect "finds the game through Steam" ((Get-Content "$T\find.log") -match "Megabonk$")
+# Where Steam says the game is (its appmanifest), not a fixed folder name.
+$steam = (Get-ItemProperty "HKCU:\Software\Valve\Steam" -ErrorAction SilentlyContinue).SteamPath
+$acf = @($steam) + ([regex]::Matches((Get-Content "$steam\steamapps\libraryfolders.vdf" -Raw -ErrorAction SilentlyContinue), '"path"\s+"([^"]+)"') | ForEach-Object { $_.Groups[1].Value -replace '\\\\', '\' }) |
+       ForEach-Object { "$_\steamapps\appmanifest_3405340.acf" } | Where-Object { Test-Path $_ } | Select-Object -First 1
+$installdir = if ($acf) { [regex]::Match((Get-Content $acf -Raw), '"installdir"\s+"([^"]+)"').Groups[1].Value } else { "Megabonk" }
+$script:last = Get-Content "$T\find.log"
+Expect "finds the game through Steam ($installdir)" ($script:last -like "*\$installdir")
 
 if ($fails -eq 0) { "ALL PASSED" } else { "$fails FAILED" }

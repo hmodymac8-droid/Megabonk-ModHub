@@ -33,4 +33,17 @@
     <EmbeddedResource Include="$(Payload)" LogicalName="payload.zip" />
   </ItemGroup>
 
+  <!-- .NET Framework 4.8 reference files as a package: the exe builds with only the .NET SDK (no 4.8 Developer Pack). -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <!-- The All-in-One zip is made by build.ps1 (dist\ is not in the repo): say so instead of a compiler error. -->
+  <Target Name="CheckPayload" BeforeTargets="BeforeBuild">
+    <Error Condition="!Exists('$(Payload)')" Text="No All-in-One zip to put inside the installer ($(Payload)). Build it with ..\build.ps1, which makes the zip first and then this exe." />
+  </Target>
+
 </Project>
