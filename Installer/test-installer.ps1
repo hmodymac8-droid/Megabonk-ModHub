@@ -60,7 +60,9 @@ Expect "check: Mod Hub loaded" ((Verify "verify-ok" $v "[Message: Preloader] Bep
 $v = NewGame "verify-nohub"; New-Item -ItemType Directory -Force "$v\BepInEx" | Out-Null
 Expect "check: BepInEx runs, Mod Hub missing" ((Verify "verify-nohub" $v "[Error  :   BepInEx] Could not load [Mod Hub]`n[Message:   BepInEx] Chainloader startup complete" 20) -eq 4 -and $script:last -match "NoModHub" -and $script:last -match "Could not load")
 $v = NewGame "verify-nolog"; New-Item -ItemType Directory -Force "$v\BepInEx" | Out-Null; Set-Content "$v\BepInEx\LogOutput.log" "Mod Hub 1.0.0 loaded"; (Get-Item "$v\BepInEx\LogOutput.log").LastWriteTime = (Get-Date).AddDays(-1)
-Expect "check: an old log doesn't count" ((Verify "verify-nolog" $v $null 5) -eq 4 -and $script:last -match "NoBepInEx")
+Expect "check: an old log doesn't count, no game started" ((Verify "verify-nolog" $v $null 5) -eq 4 -and $script:last -match "GameNotStarted")
+$v = NewGame "verify-slow"; New-Item -ItemType Directory -Force "$v\BepInEx" | Out-Null
+Expect "check: slow first start is not a failure" ((Verify "verify-slow" $v "[Message: Preloader] BepInEx 6.0.0-be.755 - Megabonk" 8) -eq 4 -and $script:last -match "StillStarting")
 
 $p = Start-Process -FilePath $Exe -ArgumentList ("--find --log `"$T\find.log`"") -Wait -PassThru
 # Where Steam says the game is (its appmanifest), not a fixed folder name.

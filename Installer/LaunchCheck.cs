@@ -13,7 +13,7 @@ namespace ModHubInstaller;
 /// </summary>
 internal static class LaunchCheck
 {
-    public enum Outcome { Loaded, NoBepInEx, NoModHub, GameClosed }
+    public enum Outcome { Loaded, NoBepInEx, NoModHub, GameClosed, StillStarting, GameNotStarted }
 
     public sealed class Result
     {
@@ -65,8 +65,10 @@ internal static class LaunchCheck
             }
             Thread.Sleep(1000);
         }
+        // Out of time. Not a failure yet unless something says so: BepInEx's first start can take long.
         string last = ReadFreshLog(gameDir, since);
-        return last == null ? new Result { Outcome = Outcome.NoBepInEx } : new Result { Outcome = Outcome.NoModHub, Errors = LastErrors(last) };
+        if (last != null) return new Result { Outcome = Outcome.StillStarting };
+        return watchGame && gameSeen == null ? new Result { Outcome = Outcome.GameNotStarted } : new Result { Outcome = Outcome.NoBepInEx };
     }
 
     /// <summary>The log's text if it was written after <paramref name="since"/>, else null. The game keeps it open, so share it.</summary>
@@ -94,6 +96,10 @@ internal static class LaunchCheck
         Outcome.NoBepInEx => Text.T("The game started, but BepInEx (the mod loader) didn't. Usually an antivirus removed winhttp.dll: allow it and install again. On Steam Deck / Linux add this launch option: WINEDLLOVERRIDES=\"winhttp=n,b\" %command%",
                                     "اللعبة اشتغلت بس BepInEx (مشغّل المودات) ما اشتغل. غالبا برنامج الحماية شال winhttp.dll: اسمح له وثبّت مرة ثانية. على Steam Deck / لينكس أضف خيار التشغيل: WINEDLLOVERRIDES=\"winhttp=n,b\" %command%"),
         Outcome.NoModHub => Text.T("BepInEx runs, but Mod Hub didn't load." + Tail(r), "BepInEx شغّال، بس Mod Hub ما اشتغل." + Tail(r)),
+        Outcome.StillStarting => Text.T("BepInEx is still setting itself up (the first start can take a few minutes). Wait for the game's main menu, then press F4.",
+                                        "BepInEx لسا يجهّز نفسه (أول تشغيل ممكن ياخذ كم دقيقة). انتظر القائمة الرئيسية للعبة، وبعدها اضغط F4."),
+        Outcome.GameNotStarted => Text.T("Steam didn't start the game (is Steam open and logged in?). Start Megabonk from Steam yourself, then press F4 in the main menu.",
+                                         "Steam ما شغّل اللعبة (Steam مفتوح ومسجّل دخول؟). شغّل Megabonk من Steam بنفسك، وبعدها اضغط F4 في القائمة الرئيسية."),
         _ => Text.T("The game closed before Mod Hub loaded. Start it again and wait for the main menu (the first start takes 1-3 minutes and needs internet)." + Tail(r),
                     "اللعبة تسكّرت قبل ما يشتغل Mod Hub. شغّلها مرة ثانية وانتظر القائمة الرئيسية (أول تشغيل ياخذ 1-3 دقايق ويحتاج نت)." + Tail(r)),
     };
