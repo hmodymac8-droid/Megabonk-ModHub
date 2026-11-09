@@ -64,7 +64,7 @@ internal sealed class MainForm : Form
         Style(_start, T("Start Megabonk", "شغّل Megabonk"), true);
         _start.SetBounds(26, 312, 200, 44);
         _start.Visible = false;
-        _start.Click += (_, __) => { try { Process.Start(new ProcessStartInfo("steam://rungameid/" + GameFinder.AppId) { UseShellExecute = true }); } catch { } Close(); };
+        _start.Click += async (_, __) => await StartAndCheck();
         Style(_close, T("Close", "سكّر"), false);
         _close.SetBounds(236, 312, 120, 44);
         _close.Visible = false;
@@ -195,9 +195,9 @@ internal sealed class MainForm : Form
                 ? T($"\nAlso moved an earlier install from the wrong place to the backup: {string.Join(", ", result.MovedLeftovers)}.",
                     $"\nونقلت تثبيت سابق كان في مكان غلط للنسخة الاحتياطية: {string.Join("، ", result.MovedLeftovers)}.")
                 : "";
-            Status(Green, T("Done! Mod Hub is installed.", "تم! Mod Hub مثبّت."),
-                T("Start Megabonk from Steam. The first start takes 1-3 minutes (a black window shows text; don't close it). Then press F4 in the main menu.",
-                  "شغّل Megabonk من Steam. أول تشغيل ياخذ 1-3 دقايق (تطلع نافذة سوداء فيها كلام، لا تسكّرها). بعدها اضغط F4 في القائمة الرئيسية.") + extra);
+            Status(Green, T("Installed and checked. Now let's see it work in the game.", "تم التثبيت والتأكد من الملفات. خلنا نشوفه يشتغل في اللعبة."),
+                T("Click \"Start Megabonk\": this window stays open and tells you when Mod Hub has loaded. The first start takes 1-3 minutes (a black window shows text; don't close it).",
+                  "اضغط \"شغّل Megabonk\": هالنافذة تبقى مفتوحة وتقولك لما يشتغل Mod Hub. أول تشغيل ياخذ 1-3 دقايق (تطلع نافذة سوداء فيها كلام، لا تسكّرها).") + extra);
         }
         catch (Exception ex)
         {
@@ -205,5 +205,30 @@ internal sealed class MainForm : Form
             _install.Enabled = _browse.Enabled = true;
             Status(Red, T("The install didn't finish.", "التثبيت ما كمل."), ex.Message);
         }
+    }
+
+    /// <summary>Starts the game through Steam and waits for Mod Hub to say it loaded (see LaunchCheck).</summary>
+    private async Task StartAndCheck()
+    {
+        var since = DateTime.Now;
+        try { Process.Start(new ProcessStartInfo("steam://rungameid/" + GameFinder.AppId) { UseShellExecute = true }); }
+        catch
+        {
+            Status(Red, T("Couldn't ask Steam to start the game.", "ما قدرت أطلب من Steam يشغّل اللعبة."), T("Start Megabonk from Steam yourself.", "شغّل Megabonk من Steam بنفسك."));
+            return;
+        }
+        _start.Enabled = false;
+        _bar.Visible = true;
+        _bar.Style = ProgressBarStyle.Marquee;
+        Status(Gold, T("Starting Megabonk and checking that Mod Hub loads...", "أشغّل Megabonk وأتأكد إن Mod Hub يشتغل..."),
+            T("Leave the game running until its main menu shows. This can take 1-3 minutes the first time.", "خل اللعبة شغّالة لين تطلع القائمة الرئيسية. أول مرة ممكن تاخذ 1-3 دقايق."));
+        string dir = _gameDir;
+        var r = await Task.Run(() => LaunchCheck.Wait(dir, since, TimeSpan.FromMinutes(6), watchGame: true,
+            msg => BeginInvoke((Action)(() => _detail.Text = msg))));
+        _bar.Visible = false;
+        _bar.Style = ProgressBarStyle.Blocks;
+        _start.Enabled = true;
+        _start.Text = r.Ok ? _start.Text : T("Try again", "جرّب مرة ثانية");
+        Status(r.Ok ? Green : Red, r.Ok ? T("Done! Mod Hub works.", "تم! Mod Hub شغّال.") : T("Mod Hub didn't start.", "Mod Hub ما اشتغل."), LaunchCheck.Explain(r));
     }
 }

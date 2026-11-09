@@ -28,6 +28,7 @@ internal static class Program
         if (Arg(args, "--lang") is string lang) Text.Arabic = lang == "ar"; // test: force a language
         if (args.Contains("--find")) { File.WriteAllText(Arg(args, "--log") ?? "find.txt", GameFinder.Find() ?? "NOT FOUND"); return 0; } // test: where is the game?
         if (args.Contains("--silent")) return Silent(target, Arg(args, "--log"));
+        if (args.Contains("--verify")) return Verify(target, Arg(args, "--log"), Arg(args, "--seconds"));
 
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
@@ -65,6 +66,20 @@ internal static class Program
             return 0;
         }
         catch (Exception ex) { Log("FAIL " + ex.Message.Replace('\n', ' ')); return 1; }
+    }
+
+    /// <summary>
+    /// --verify: waits for the game's next start to load Mod Hub (the same check as the window's "Start Megabonk"),
+    /// without starting the game. Exit code 0 = Mod Hub loaded, 4 = it didn't; the log file says why.
+    /// </summary>
+    private static int Verify(string target, string log, string seconds)
+    {
+        target ??= GameFinder.Find();
+        if (!GameFinder.IsGameFolder(target)) { if (log != null) File.WriteAllText(log, "FAIL no game folder: " + target); return 2; }
+        var timeout = TimeSpan.FromSeconds(int.TryParse(seconds, out int s) ? s : 360);
+        var r = LaunchCheck.Wait(target, DateTime.Now, timeout, watchGame: true);
+        if (log != null) File.WriteAllText(log, $"{(r.Ok ? "OK" : "FAIL")} {r.Outcome} version={r.Version} errors={r.Errors?.Replace('\n', ' ')}");
+        return r.Ok ? 0 : 4;
     }
 
     private static string Arg(string[] args, string name)
