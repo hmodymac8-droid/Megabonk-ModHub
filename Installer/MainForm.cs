@@ -229,6 +229,10 @@ internal sealed class MainForm : Form
         _bar.Style = ProgressBarStyle.Blocks;
         _start.Enabled = true;
         _start.Text = r.Ok ? _start.Text : T("Try again", "جرّب مرة ثانية");
-        Status(r.Ok ? Green : Red, r.Ok ? T("Done! Mod Hub works.", "تم! Mod Hub شغّال.") : T("Mod Hub didn't start.", "Mod Hub ما اشتغل."), LaunchCheck.Explain(r));
+        // Still starting / game not started: not a failure, just not proven yet.
+        bool unsure = r.Outcome is LaunchCheck.Outcome.StillStarting or LaunchCheck.Outcome.GameNotStarted;
+        Status(r.Ok ? Green : unsure ? Gold : Red,
+            r.Ok ? T("Done! Mod Hub works.", "تم! Mod Hub شغّال.") : unsure ? T("Almost there.", "قربنا.") : T("Mod Hub didn't start.", "Mod Hub ما اشتغل."),
+            LaunchCheck.Explain(r));
     }
 }
