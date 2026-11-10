@@ -46,6 +46,27 @@ Expect "locked file: retry works" ((Run "locked-retry" $k) -eq 0)
 $m = NewGame "melon"; New-Item -ItemType Directory -Force "$m\MelonLoader" | Out-Null; Set-Content "$m\version.dll" "ml"
 Expect "real MelonLoader: warned, still installs" ((Run "melon" $m) -eq 0 -and $script:last -match "otherMelonLoader=True")
 
+# Hide the BepInEx console: only that setting changes, the rest of the player's BepInEx.cfg stays.
+$c = NewGame "console-new"
+$p = Start-Process -FilePath $Exe -ArgumentList ("--silent --hide-console --target `"$c`" --log `"$T\console-new.log`"") -Wait -PassThru
+$cfg = Get-Content "$c\BepInEx\config\BepInEx.cfg" -Raw -ErrorAction SilentlyContinue; $script:last = $cfg
+Expect "console: hidden on a new install" ($p.ExitCode -eq 0 -and $cfg -match "\[Logging\.Console\]" -and $cfg -match "Enabled = false")
+$c = NewGame "console-old"; New-Item -ItemType Directory -Force "$c\BepInEx\config" | Out-Null
+Set-Content "$c\BepInEx\config\BepInEx.cfg" "[Caching]`r`nEnabledCache = true`r`n`r`n[Logging.Console]`r`n`r`nEnabled = true`r`n`r`n[Logging.Disk]`r`nEnabled = true"
+$p = Start-Process -FilePath $Exe -ArgumentList ("--silent --hide-console --target `"$c`" --log `"$T\console-old.log`"") -Wait -PassThru
+$cfg = Get-Content "$c\BepInEx\config\BepInEx.cfg"; $script:last = $cfg -join " | "
+Expect "console: existing settings kept, only the console line changed" ($p.ExitCode -eq 0 -and ($cfg -join "`n") -match "\[Logging\.Console\]\s*Enabled = false\s*\[Logging\.Disk\]\s*Enabled = true" -and $cfg -contains "EnabledCache = true")
+$p = Start-Process -FilePath $Exe -ArgumentList ("--silent --show-console --target `"$c`" --log `"$T\console-show.log`"") -Wait -PassThru
+Expect "console: shown again" ((Get-Content "$c\BepInEx\config\BepInEx.cfg") -contains "Enabled = true" -and -not ((Get-Content "$c\BepInEx\config\BepInEx.cfg") -contains "Enabled = false"))
+
+# Remove: Mod Hub only, or Mod Hub and BepInEx. Nothing deleted, the player's other mods stay.
+$r = NewGame "remove"; Run "remove-install" $r | Out-Null; New-Item -ItemType Directory -Force "$r\BepInEx\plugins\MyMod" | Out-Null; Set-Content "$r\BepInEx\plugins\MyMod\MyMod.dll" "mine"
+$p = Start-Process -FilePath $Exe -ArgumentList ("--remove --target `"$r`" --log `"$T\remove.log`"") -Wait -PassThru; $script:last = Get-Content "$T\remove.log"
+Expect "remove: Mod Hub only (backed up, other mods and BepInEx stay)" ($p.ExitCode -eq 0 -and -not (Test-Path "$r\BepInEx\plugins\ModHub") -and (Test-Path "$r\BepInEx\plugins\MyMod\MyMod.dll") -and (Test-Path "$r\winhttp.dll") -and (Get-ChildItem "$r\BepInEx\_installer_backup" -Recurse -Filter ModHub.dll))
+Run "remove-reinstall" $r | Out-Null
+$p = Start-Process -FilePath $Exe -ArgumentList ("--remove --all --target `"$r`" --log `"$T\remove-all.log`"") -Wait -PassThru; $script:last = Get-Content "$T\remove-all.log"
+Expect "remove: Mod Hub and BepInEx (no mods load, files backed up)" ($p.ExitCode -eq 0 -and -not (Test-Path "$r\winhttp.dll") -and -not (Test-Path "$r\BepInEx\plugins\ModHub") -and (Get-ChildItem "$r\BepInEx\_installer_backup" -Recurse -Filter winhttp.dll))
+
 # "Did it work": the check reads the game's BepInEx\LogOutput.log (fake folders, no real game is started).
 function Verify($name, $dir, $log, $seconds) {
     $out = "$T\$name.log"

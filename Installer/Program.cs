@@ -26,8 +26,16 @@ internal static class Program
         // A path ending in a backslash before a quote reaches us with a stray quote: clean it either way.
         string target = Arg(args, "--target")?.Trim().Trim('"').TrimEnd('\\');
         if (Arg(args, "--lang") is string lang) Text.Arabic = lang == "ar"; // test: force a language
+        if (Arg(args, "--shot-about") is string aboutShot) { Application.EnableVisualStyles(); AboutForm.Show(null, aboutShot); return 0; } // test: picture of the About window
         if (args.Contains("--find")) { File.WriteAllText(Arg(args, "--log") ?? "find.txt", GameFinder.Find() ?? "NOT FOUND"); return 0; } // test: where is the game?
-        if (args.Contains("--silent")) return Silent(target, Arg(args, "--log"));
+        if (args.Contains("--remove")) return RemoveSilent(target, args.Contains("--all"), Arg(args, "--log"));
+        if (args.Contains("--silent"))
+        {
+            int code = Silent(target, Arg(args, "--log"));
+            // --hide-console / --show-console: BepInEx's console window (same as the window's checkbox)
+            if (code == 0 && (args.Contains("--hide-console") || args.Contains("--show-console"))) Setup.SetConsoleHidden(target ?? GameFinder.Find(), args.Contains("--hide-console"));
+            return code;
+        }
         if (args.Contains("--verify")) return Verify(target, Arg(args, "--log"), Arg(args, "--seconds"));
 
         Application.EnableVisualStyles();
@@ -80,6 +88,21 @@ internal static class Program
         var r = LaunchCheck.Wait(target, DateTime.Now, timeout, watchGame: true);
         if (log != null) File.WriteAllText(log, $"{(r.Ok ? "OK" : "FAIL")} {r.Outcome} version={r.Version} errors={r.Errors?.Replace('\n', ' ')}");
         return r.Ok ? 0 : 4;
+    }
+
+    /// <summary>--remove [--all]: the window's Remove, without a window (exit code 0 = done, the log lists what moved).</summary>
+    private static int RemoveSilent(string target, bool all, string log)
+    {
+        try
+        {
+            target ??= GameFinder.Find();
+            if (!GameFinder.IsGameFolder(target)) { if (log != null) File.WriteAllText(log, "FAIL no game folder: " + target); return 2; }
+            if (Setup.Check(target).GameRunning) { if (log != null) File.WriteAllText(log, "FAIL game running"); return 3; }
+            var moved = Setup.Remove(target, all);
+            if (log != null) File.WriteAllText(log, "OK moved=" + string.Join(",", moved));
+            return 0;
+        }
+        catch (Exception ex) { if (log != null) File.WriteAllText(log, "FAIL " + ex.Message.Replace('\n', ' ')); return 1; }
     }
 
     private static string Arg(string[] args, string name)

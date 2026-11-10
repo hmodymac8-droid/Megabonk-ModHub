@@ -16,6 +16,7 @@
     <Description>Installs Mod Hub (with BepInEx) for Megabonk</Description>
     <Copyright>AhmedHus21</Copyright>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>icon.ico</ApplicationIcon>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <!-- Reproducible: the same source + the same All-in-One zip give a byte-identical exe in any folder. -->
     <Deterministic>true</Deterministic>
@@ -31,6 +32,7 @@
     <Reference Include="System.IO.Compression" />
     <Reference Include="System.IO.Compression.FileSystem" />
     <EmbeddedResource Include="$(Payload)" LogicalName="payload.zip" />
+    <EmbeddedResource Include="logo.png" LogicalName="logo.png" />
   </ItemGroup>
 
   <!-- .NET Framework 4.8 reference files as a package: the exe builds with only the .NET SDK (no 4.8 Developer Pack). -->

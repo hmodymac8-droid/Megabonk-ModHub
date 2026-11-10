@@ -13,7 +13,9 @@ internal sealed class MainForm : Form
                                    Green = Color.FromArgb(90, 200, 120), Red = Color.FromArgb(240, 90, 90), Grey = Color.FromArgb(170, 170, 180);
 
     private readonly Label _folder = new(), _status = new(), _detail = new();
-    private readonly Button _install = new(), _browse = new(), _admin = new(), _start = new(), _close = new();
+    private readonly Button _install = new(), _browse = new(), _admin = new(), _start = new(), _close = new(), _remove = new(), _about = new();
+    private readonly CheckBox _hideConsole = new();
+    private bool _settingConsole; // the checkbox is being set from the file, not clicked
     private readonly ProgressBar _bar = new();
     private string _gameDir;
     private bool _done;
@@ -30,13 +32,19 @@ internal sealed class MainForm : Form
         ForeColor = Color.White;
         Font = new Font("Segoe UI", 10f);
         AutoScaleMode = AutoScaleMode.Dpi;
-        ClientSize = new Size(560, 380);
+        ClientSize = new Size(560, 430);
+        Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
 
-        var title = new Label { Text = "Mod Hub", Font = new Font("Segoe UI Semibold", 22f), ForeColor = Gold, AutoSize = true, Location = new Point(24, 16) };
+        var logo = new PictureBox { Image = Logo(), SizeMode = PictureBoxSizeMode.Zoom, Bounds = new Rectangle(24, 16, 48, 48) };
+        var title = new Label { Text = "Mod Hub", Font = new Font("Segoe UI Semibold", 22f), ForeColor = Gold, AutoSize = true, Location = new Point(80, 16) };
+        Style(_about, T("About the developer", "عن المطوّر"), false);
+        _about.SetBounds(326, 22, 210, 34);
+        _about.Font = new Font("Segoe UI Semibold", 9.5f);
+        _about.Click += (_, __) => AboutForm.Show(this);
         var sub = new Label
         {
             Text = T("Installs Mod Hub (with BepInEx) into Megabonk.", "يثبّت Mod Hub (مع BepInEx) في Megabonk."),
-            ForeColor = Grey, AutoSize = false, Size = new Size(512, 52), Location = new Point(26, 62),
+            ForeColor = Grey, AutoSize = false, Size = new Size(512, 40), Location = new Point(26, 70),
         };
         var folderTitle = new Label { Text = T("Game folder", "مجلد اللعبة"), ForeColor = Grey, AutoSize = true, Location = new Point(26, 112) };
         _folder.SetBounds(26, 136, 400, 28);
@@ -51,26 +59,36 @@ internal sealed class MainForm : Form
         _status.Font = new Font("Segoe UI Semibold", 11f);
         _detail.SetBounds(26, 214, 510, 64);
         _detail.ForeColor = Grey;
-        _bar.SetBounds(26, 284, 510, 10);
+        _hideConsole.Text = T("Hide the black BepInEx console window when the game starts", "اخفِ نافذة BepInEx السوداء لما تشتغل اللعبة");
+        _hideConsole.SetBounds(26, 280, 510, 44);
+        _hideConsole.CheckAlign = ContentAlignment.TopLeft;
+        _hideConsole.TextAlign = ContentAlignment.TopLeft;
+        _hideConsole.ForeColor = Color.White;
+        _hideConsole.CheckedChanged += (_, __) => ConsoleChanged();
+        _bar.SetBounds(26, 334, 510, 10);
         _bar.Visible = false;
 
         Style(_install, T("Install", "ثبّت"), true);
-        _install.SetBounds(26, 312, 200, 44);
+        _install.SetBounds(26, 362, 200, 44);
         _install.Click += async (_, __) => await DoInstall();
         Style(_admin, T("Install as administrator", "ثبّت كمسؤول"), false);
-        _admin.SetBounds(236, 312, 220, 44);
+        _admin.SetBounds(236, 362, 220, 44);
         _admin.Visible = false;
         _admin.Click += (_, __) => RunAsAdmin();
         Style(_start, T("Start Megabonk", "شغّل Megabonk"), true);
-        _start.SetBounds(26, 312, 200, 44);
+        _start.SetBounds(26, 362, 200, 44);
         _start.Visible = false;
         _start.Click += async (_, __) => await StartAndCheck();
         Style(_close, T("Close", "سكّر"), false);
-        _close.SetBounds(236, 312, 120, 44);
+        _close.SetBounds(236, 362, 120, 44);
+        Style(_remove, T("Remove", "إزالة"), false);
+        _remove.SetBounds(416, 362, 120, 44);
+        _remove.Visible = false;
+        _remove.Click += (_, __) => DoRemove();
         _close.Visible = false;
         _close.Click += (_, __) => Close();
 
-        Controls.AddRange(new Control[] { title, sub, folderTitle, _folder, _browse, _status, _detail, _bar, _install, _admin, _start, _close });
+        Controls.AddRange(new Control[] { logo, title, _about, sub, folderTitle, _folder, _browse, _status, _detail, _hideConsole, _bar, _install, _admin, _start, _close, _remove });
 
         _gameDir = GameFinder.IsGameFolder(target) ? target : GameFinder.Find();
         Activated += (_, __) => { if (!_done && _bar.Visible == false) Refresh2(); }; // re-check when the player comes back (e.g. after closing the game)
@@ -93,7 +111,7 @@ internal sealed class MainForm : Form
     /// <summary>Shows where the game is and whether anything is in the way; enables Install only when it can work.</summary>
     private void Refresh2()
     {
-        _admin.Visible = false;
+        _admin.Visible = _remove.Visible = false;
         if (!GameFinder.IsGameFolder(_gameDir))
         {
             _folder.Text = T("Megabonk wasn't found automatically.", "ما لقيت Megabonk تلقائيا.");
@@ -138,6 +156,56 @@ internal sealed class MainForm : Form
                   "هذا يضيف BepInEx (مشغّل المودات) و Mod Hub لـ Megabonk. ملفات اللعبة وحفظك ما يتغيّرون."));
         _install.Text = r.HasModHub ? T("Update", "حدّث") : T("Install", "ثبّت");
         _install.Enabled = true;
+        _remove.Visible = r.HasModHub || r.HasBepInEx;
+        // Already modded: show the console setting as it is. A new install hides it unless the player unticks it.
+        _settingConsole = true;
+        _hideConsole.Checked = !r.HasBepInEx || Setup.ConsoleHidden(_gameDir);
+        _settingConsole = false;
+    }
+
+    private static Image Logo()
+    {
+        try
+        {
+            using var s = typeof(MainForm).Assembly.GetManifestResourceStream("logo.png");
+            return s == null ? null : new Bitmap(s);
+        }
+        catch { return null; }
+    }
+
+    /// <summary>The checkbox: with BepInEx already there it's saved right away, otherwise when installing.</summary>
+    private void ConsoleChanged()
+    {
+        if (_settingConsole || !GameFinder.IsGameFolder(_gameDir) || !Setup.Check(_gameDir).HasBepInEx) return;
+        try
+        {
+            Setup.SetConsoleHidden(_gameDir, _hideConsole.Checked);
+            Status(Green, _hideConsole.Checked ? T("Saved: the BepInEx console stays hidden.", "تم الحفظ: نافذة BepInEx تبقى مخفية.")
+                                               : T("Saved: the BepInEx console shows again.", "تم الحفظ: نافذة BepInEx ترجع تطلع."),
+                T("This applies the next time the game starts. The log file is still written.", "يتطبق من التشغيل الجاي للعبة. وملف السجل ينكتب عادي."));
+        }
+        catch (Exception ex) { Status(Red, T("Couldn't save the setting.", "ما قدرت أحفظ الإعداد."), ex.Message); }
+    }
+
+    /// <summary>Remove: Mod Hub only, or Mod Hub and BepInEx. Everything goes to the backup folder, nothing is deleted.</summary>
+    private void DoRemove()
+    {
+        if (Setup.Check(_gameDir).GameRunning) { Refresh2(); return; }
+        var answer = MessageBox.Show(this,
+            T("Remove Mod Hub from Megabonk? Your other mods and settings stay.\n\nYes: remove Mod Hub AND BepInEx (no mods load at all, the game runs as normal).\nNo: remove only Mod Hub (your other mods keep working).\nCancel: keep everything.\n\nNothing is deleted: it all goes to BepInEx\\_installer_backup.",
+              "تشيل Mod Hub من Megabonk؟ موداتك الثانية وإعداداتك تبقى.\n\nYes: شيل Mod Hub و BepInEx (ولا مود يشتغل، واللعبة تشتغل عادي).\nNo: شيل Mod Hub بس (موداتك الثانية تبقى شغّالة).\nCancel: خل كل شيء.\n\nما ينحذف شيء: كله ينحفظ في BepInEx\\_installer_backup."),
+            T("Remove", "إزالة"), MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question, MessageBoxDefaultButton.Button3,
+            ModHubInstaller.Text.Arabic ? MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign : 0);
+        if (answer == DialogResult.Cancel) return;
+        try
+        {
+            var moved = Setup.Remove(_gameDir, answer == DialogResult.Yes);
+            Refresh2();
+            Status(Green, moved.Count == 0 ? T("There was nothing to remove.", "ما كان فيه شيء أشيله.")
+                                           : answer == DialogResult.Yes ? T("Removed Mod Hub and BepInEx.", "تمت إزالة Mod Hub و BepInEx.") : T("Removed Mod Hub.", "تمت إزالة Mod Hub."),
+                T("Moved to BepInEx\\_installer_backup: ", "انتقل إلى BepInEx\\_installer_backup: ") + string.Join(", ", moved) + T(". Install puts it back any time.", ". تقدر ترجعه بالتثبيت متى ما تبي."));
+        }
+        catch (Exception ex) { Status(Red, T("Couldn't remove it.", "ما قدرت أشيله."), ex.Message); }
     }
 
     private Timer _watch;
@@ -187,9 +255,10 @@ internal sealed class MainForm : Form
                 _bar.Value = Math.Max(0, Math.Min(100, (int)(p * 100)));
                 _detail.Text = f;
             }))));
+            try { Setup.SetConsoleHidden(dir, _hideConsole.Checked); } catch { /* only a display setting */ }
             _done = true;
             _bar.Visible = false;
-            _install.Visible = false;
+            _install.Visible = _remove.Visible = false;
             _start.Visible = _close.Visible = true;
             string extra = result.MovedLeftovers.Count > 0
                 ? T($"\nAlso moved an earlier install from the wrong place to the backup: {string.Join(", ", result.MovedLeftovers)}.",
