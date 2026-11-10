@@ -145,6 +145,81 @@ internal static class Setup
     }
 
     /// <summary>
+    /// Takes Mod Hub (and Melon Bridge) out of the game; with <paramref name="alsoBepInEx"/> also the loader, so no mod
+    /// loads at all. Nothing is deleted: everything goes to BepInEx\_installer_backup\&lt;time&gt;-removed, and the
+    /// player's other mods and settings stay. Returns the moved paths (relative to the game folder).
+    /// </summary>
+    public static List<string> Remove(string gameDir, bool alsoBepInEx)
+    {
+        gameDir = Path.GetFullPath(gameDir).TrimEnd('\\');
+        string backup = Path.Combine(gameDir, "BepInEx", "_installer_backup", DateTime.Now.ToString("yyyyMMdd-HHmmss") + "-removed");
+        var moved = new List<string>();
+        var items = new List<string> { @"BepInEx\plugins\ModHub", @"BepInEx\plugins\MelonBridge" };
+        if (alsoBepInEx) items.AddRange(new[] { "winhttp.dll", "doorstop_config.ini", ".doorstop_version" });
+        foreach (var rel in items)
+        {
+            string from = Path.Combine(gameDir, rel), to = Path.Combine(backup, rel);
+            bool dir = Directory.Exists(from);
+            if (!dir && !File.Exists(from)) continue;
+            Directory.CreateDirectory(Path.GetDirectoryName(to));
+            try { if (dir) Directory.Move(from, to); else File.Move(from, to); }
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+            {
+                throw new InvalidOperationException(Text.T($"Couldn't move {rel}. Is Megabonk still open? Close it and try again.\n({ex.Message})",
+                                                            $"ما قدرت أنقل {rel}. اللعبة مفتوحة؟ سكّرها وجرّب مرة ثانية.\n({ex.Message})"));
+            }
+            moved.Add(rel);
+        }
+        return moved;
+    }
+
+    private static string ConfigFile(string gameDir) => Path.Combine(gameDir, "BepInEx", "config", "BepInEx.cfg");
+
+    /// <summary>Is BepInEx's console window (the black window with log text) switched off?</summary>
+    public static bool ConsoleHidden(string gameDir)
+    {
+        try
+        {
+            bool inSection = false;
+            foreach (var raw in File.ReadAllLines(ConfigFile(gameDir)))
+            {
+                string line = raw.Trim();
+                if (line.StartsWith("[")) inSection = line.Equals("[Logging.Console]", StringComparison.OrdinalIgnoreCase);
+                else if (inSection && line.StartsWith("Enabled", StringComparison.OrdinalIgnoreCase) && line.Contains("="))
+                    return line.Substring(line.IndexOf('=') + 1).Trim().Equals("false", StringComparison.OrdinalIgnoreCase);
+            }
+        }
+        catch { }
+        return false; // BepInEx shows it by default
+    }
+
+    /// <summary>
+    /// Shows or hides BepInEx's console window. Only that one setting changes; the log file (BepInEx\LogOutput.log)
+    /// is still written. Before the first start there is no BepInEx.cfg yet: BepInEx keeps this value and fills in the rest.
+    /// </summary>
+    public static void SetConsoleHidden(string gameDir, bool hidden)
+    {
+        string path = ConfigFile(gameDir);
+        string value = hidden ? "false" : "true";
+        var lines = File.Exists(path) ? File.ReadAllLines(path).ToList() : new List<string>();
+        int section = lines.FindIndex(l => l.Trim().Equals("[Logging.Console]", StringComparison.OrdinalIgnoreCase));
+        if (section < 0)
+        {
+            if (lines.Count > 0 && lines[lines.Count - 1].Trim().Length > 0) lines.Add("");
+            lines.AddRange(new[] { "[Logging.Console]", "", "## Enables showing a console for log output.", "# Setting type: Boolean", "# Default value: true", "Enabled = " + value });
+        }
+        else
+        {
+            int i = section + 1;
+            for (; i < lines.Count && !lines[i].TrimStart().StartsWith("["); i++)
+                if (lines[i].TrimStart().StartsWith("Enabled", StringComparison.OrdinalIgnoreCase) && lines[i].Contains("=")) { lines[i] = "Enabled = " + value; break; }
+            if (i >= lines.Count || lines[i].TrimStart().StartsWith("[")) lines.Insert(i, "Enabled = " + value);
+        }
+        Directory.CreateDirectory(Path.GetDirectoryName(path));
+        File.WriteAllLines(path, lines);
+    }
+
+    /// <summary>
     /// A wrong "Extract All" leaves a subfolder (like "ModHub-1.1.0-AllInOne-with-BepInEx") holding its own winhttp.dll
     /// and BepInEx. It does nothing there, but it confuses people: it goes to the backup folder.
     /// </summary>

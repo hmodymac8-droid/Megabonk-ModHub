@@ -4,12 +4,23 @@ An in-game mod manager for **Megabonk** (BepInEx 6, IL2CPP). Press **F4** in gam
 Players download it from the [Nexus page](https://www.nexusmods.com/megabonk/mods/194); the zips are attached to the
 [releases](../../releases) of this repo — Mod Hub updates itself from there, because Nexus allows no direct downloads.
 
+## Installer
+
+The easiest way to install: **Mod Hub Installer** (`Mod.Hub.Installer.<version>.exe` in the [releases](../../releases)).
+It finds Megabonk through Steam, installs Mod Hub with BepInEx, checks every file, then starts the game and tells you
+when Mod Hub has loaded. It can also remove Mod Hub (or Mod Hub and BepInEx; nothing is deleted, it goes to a backup
+folder) and hide BepInEx's black console window. English and Arabic.
+
+![Mod Hub Installer](docs/installer.png)
+![About the developer](docs/installer-about.png)
+
 ## Layout
 
 ```
 src/                    the plugin (C#, net6.0) — this is the program
 ModHub.csproj           project file; the version number lives here
 Installer/              source of the standalone "Mod Hub Installer.exe"
+docs/                   screenshots used in this readme
 package/                README / INSTALL texts copied into the release zips
 build.ps1               builds the plugin and makes the release zips in .\dist
 build-thunderstore.ps1  same for the Thunderstore edition (no Nexus code)
