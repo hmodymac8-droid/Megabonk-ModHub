@@ -374,15 +374,17 @@ internal static class Characters
     }
 
     /// <summary>Moves a character to BepInEx\_hub_removed: its folder, or a loose json together with its bundle.</summary>
-    public static bool Remove(Mod mod)
+    public static bool Remove(Mod mod, out string stored)
     {
+        stored = null;
         try
         {
             Directory.CreateDirectory(Catalog.RemovedDir);
             string stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
             if (mod.IsFolder)
             {
-                Directory.Move(mod.Path, Path.Combine(Catalog.RemovedDir, SafeName(mod.Id).Replace(':', '-') + "-" + stamp));
+                stored = Path.Combine(Catalog.RemovedDir, SafeName(mod.Id).Replace(':', '-') + "-" + stamp);
+                Directory.Move(mod.Path, stored);
                 return true;
             }
             string json = mod.Path;
@@ -391,13 +393,14 @@ internal static class Characters
             string baseName = Path.GetFileName(json).Substring(0, Path.GetFileName(json).Length - JsonEnd.Length);
             string dest = Path.Combine(Catalog.RemovedDir, SafeName(baseName) + "-" + stamp);
             Directory.CreateDirectory(dest);
-            File.Move(json, Path.Combine(dest, Path.GetFileName(json)));
+            File.Move(mod.Path, Path.Combine(dest, Path.GetFileName(mod.Path))); // mod.Path: a character that's off is "X.custom.json.off"
             foreach (var f in Directory.GetFiles(dir))
             {
                 string n = Path.GetFileName(f);
                 if (n.Equals(baseName, StringComparison.OrdinalIgnoreCase) || n.StartsWith(baseName + ".", StringComparison.OrdinalIgnoreCase))
                     try { File.Move(f, Path.Combine(dest, n)); } catch { }
             }
+            stored = dest;
             return true;
         }
         catch (Exception e)
@@ -405,6 +408,20 @@ internal static class Characters
             Plugin.Logger.LogWarning($"Could not remove character {mod.Name}: {e.Message}");
             return false;
         }
+    }
+
+    /// <summary>Moves a removed character back: its folder, or a loose json with its bundle. Throws if a file can't be moved.</summary>
+    public static void PutBack(HistoryEntry h)
+    {
+        string parent = Path.GetDirectoryName(h.Original);
+        Directory.CreateDirectory(parent);
+        if (h.Folder) Directory.Move(h.Stored, h.Original);
+        else
+        {
+            foreach (var f in Directory.GetFiles(h.Stored)) File.Move(f, Path.Combine(parent, Path.GetFileName(f)));
+            Directory.Delete(h.Stored, false);
+        }
+        RestartNeeded = true;
     }
 
     /// <summary>"X.custom.json.off" -> "X.custom.json".</summary>

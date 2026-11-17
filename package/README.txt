@@ -35,7 +35,7 @@ PROFILES & FRIENDS
 
 UPDATES
   - When a new version is out, "Update Mod Hub" downloads and installs it inside the game (from
-    https://github.com/hmodymac8-droid/ModHub/releases, the same files as the Nexus page). Restart to use it.
+    https://github.com/hmodymac8-droid/Megabonk-ModHub/releases, the same files as the Nexus page). Restart to use it.
   - A Mod Hub zip downloaded from Nexus also works: Mod Hub offers "Install Mod Hub x.x.x" in one click.
 
 SAFETY

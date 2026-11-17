@@ -71,12 +71,22 @@ internal static class ModInfo
         }
     }
 
+    private sealed class Remembered { public long Length; public DateTime Written; public PluginMeta Meta; }
+    private static readonly Dictionary<string, Remembered> Known = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Reads a DLL once and remembers the answer until its size or date changes: a scan asks about every DLL several times.</summary>
     public static PluginMeta Read(string path)
     {
         try
         {
+            var file = new FileInfo(path);
+            if (!file.Exists) return null;
+            lock (Known)
+                if (Known.TryGetValue(path, out var r) && r.Length == file.Length && r.Written == file.LastWriteTimeUtc) return r.Meta;
             using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-            return Read(fs);
+            var meta = Read(fs);
+            lock (Known) Known[path] = new Remembered { Length = file.Length, Written = file.LastWriteTimeUtc, Meta = meta };
+            return meta;
         }
         catch { return null; }
     }

@@ -120,4 +120,4 @@ and verify the built DLL no longer contains types coming from backup folders (or
 
 - **Error log viewer** (removed in 1.2.3 — left-click button that opens the log lines for one mod). Only bring it back if the author asks; if it returns it must be a normal left-click button, not a right-click target.
 - Character rows currently count in "N mods found"; a separate "N characters" count would read better.
-- History could offer "undo" for the last remove (move it back out of `_hub_removed`).
+- ~~History could offer "undo" for the last remove~~ Done in 1.2.5 (Put back). Removals from before 1.2.5 did not record where the copy went, so they get no button.

@@ -20,6 +20,16 @@ internal sealed class HistoryEntry
     public string To { get; set; }        // version after
     public string Source { get; set; }    // "Thunderstore:Owner-Name", "Nexus:194", "GitHub:...", "Downloads", "Drop folder"
     public string Detail { get; set; }    // kind-specific: flags ("kept", "loader"), a count, or names that changed along
+    public string For { get; set; }       // the mod this one is here for, when it came along as a requirement
+
+    // Remove lines only, so Put back can restore the mod exactly as it was:
+    public string Id { get; set; }        // the mod's id
+    public string Guid { get; set; }
+    public string Stored { get; set; }    // where its copy is in BepInEx\_hub_removed
+    public string Original { get; set; }  // where it was (for a loose character: its json)
+    public bool Folder { get; set; }      // Original is a folder
+    public string PackageVersion { get; set; }
+    public bool Restored { get; set; }    // put back already
 }
 
 /// <summary>
@@ -38,7 +48,7 @@ internal static class History
     public const string Back = "back", Redo = "redo", CancelUpdate = "cancel-update";
     public const string AutoBack = "auto-back", AutoOff = "auto-off", SafetyBack = "safety-back", SafetyOff = "safety-off";
     public const string VanillaOn = "vanilla-on", VanillaOff = "vanilla-off", ProfileApply = "profile-apply", ProfileSave = "profile-save";
-    public const string Emptied = "emptied";
+    public const string Emptied = "emptied", PutBack = "put-back", GameUpdated = "game-updated", FriendMatch = "friend-match";
 
     private const int Max = 500;
     private static string FilePath => Path.Combine(Paths.ConfigPath, "ModHub.history.json");
@@ -52,14 +62,18 @@ internal static class History
     public static int Changes { get; private set; }
 
     /// <summary>Records one action. Safe to call from any thread (installs run in the background).</summary>
-    public static void Add(string kind, string name, string from = null, string to = null, string source = null, string detail = null)
+    public static void Add(string kind, string name, string from = null, string to = null, string source = null, string detail = null, string neededFor = null) =>
+        Add(new HistoryEntry { Kind = kind, Name = name, From = from, To = to, Source = source, Detail = detail, For = neededFor });
+
+    private static void Add(HistoryEntry entry)
     {
         try
         {
+            entry.TimeUtc = DateTime.UtcNow;
             lock (Lock)
             {
                 LoadIfNeeded();
-                _entries.Add(new HistoryEntry { TimeUtc = DateTime.UtcNow, Kind = kind, Name = name, From = from, To = to, Source = source, Detail = detail });
+                _entries.Add(entry);
                 if (_entries.Count > Max) _entries.RemoveRange(0, _entries.Count - Max);
                 Changes++;
             }
@@ -67,6 +81,25 @@ internal static class History
             SaveSoon();
         }
         catch (Exception e) { Plugin.Logger.LogDebug($"History: {e.Message}"); }
+    }
+
+    /// <summary>Records a removal with what Put back needs. <paramref name="stored"/> is where its copy went.</summary>
+    public static void AddRemoved(Mod m, string stored) => Add(new HistoryEntry
+    {
+        Kind = m.IsCharacter ? CharacterRemove : Remove, Name = m.Name, From = m.Version, Source = m.Source, PackageVersion = m.PackageVersion,
+        Id = m.Id, Guid = m.Guid, Stored = stored, Original = m.Path, Folder = m.IsFolder, For = m.InstalledFor.FirstOrDefault(),
+    });
+
+    /// <summary>Is this a removal whose copy is still in _hub_removed? (Removals from before 1.2.5 don't say where it went.)</summary>
+    public static bool CanPutBack(HistoryEntry h) =>
+        h.Kind is Remove or CharacterRemove && !h.Restored && h.Stored != null && h.Original != null
+        && (Directory.Exists(h.Stored) || File.Exists(h.Stored));
+
+    /// <summary>The removal is undone: its line loses the button, and the putting back gets a line of its own.</summary>
+    public static void MarkPutBack(HistoryEntry h)
+    {
+        lock (Lock) h.Restored = true;
+        Add(PutBack, h.Name, to: h.From);
     }
 
     /// <summary>All entries, newest first.</summary>
@@ -137,7 +170,8 @@ internal static class History
         string where = SourceName(h.Source);
         string by = where == null ? "" : L.T($" from {where}", $" من {where}");
         bool kept = Has(h, "kept");
-        string loader = Has(h, "loader") ? L.T(" (needed for custom characters)", " (تحتاجه الشخصيات المخصصة)") : "";
+        string needed = h.For != null ? L.T($" (needed for {h.For})", $" (يحتاجه {h.For})") : "";
+        string loader = needed != "" ? needed : Has(h, "loader") ? L.T(" (needed for custom characters)", " (تحتاجه الشخصيات المخصصة)") : "";
         string also = h.Kind is On or Off && !string.IsNullOrEmpty(h.Detail)
             ? L.T($" (also changed: {h.Detail})", $" (وتغير معه: {h.Detail})") : "";
         switch (h.Kind)
@@ -148,10 +182,15 @@ internal static class History
                 return L.T($"Updated {n} {h.From} → {h.To}{by}", $"تم تحديث {n} من {h.From} إلى {h.To}{by}")
                        + (kept ? L.T(" (old copy kept)", " (النسخة القديمة محفوظة)") : "") + loader;
             case Remove: return L.T($@"Removed {n} (moved to BepInEx\_hub_removed)", $@"تم حذف {n} (نُقل إلى BepInEx\_hub_removed)");
+            case PutBack: return L.T($@"Put back {n} {h.To} (from BepInEx\_hub_removed)", $@"تم إرجاع {n} {h.To} (من BepInEx\_hub_removed)");
+            case GameUpdated: return h.From != null && h.From != h.To
+                ? L.T($"Megabonk was updated ({h.From} → {h.To}): mods made for the old version can stop working", $"Megabonk تحدّثت ({h.From} إلى {h.To}): المودات المصنوعة للنسخة القديمة ممكن توقف")
+                : L.T("Megabonk was updated: mods made for the old version can stop working", "Megabonk تحدّثت: المودات المصنوعة للنسخة القديمة ممكن توقف");
+            case FriendMatch: return L.T($"Matched a friend's mods ({h.Detail})", $"طابقت مودات صديق ({h.Detail})");
             case Duplicate: return L.T($@"Mod Hub moved out an old duplicate copy of {n} {h.From} (to BepInEx\_hub_removed)",
                                        $@"المدير نقل نسخة قديمة مكررة من {n} {h.From} (إلى BepInEx\_hub_removed)");
             case CancelInstall: return L.T($"Cancelled the install of {n}", $"تم إلغاء تثبيت {n}");
-            case On: return L.T($"Turned ON {n}", $"تم تشغيل {n}") + also;
+            case On: return L.T($"Turned ON {n}", $"تم تشغيل {n}") + also + needed;
             case Off: return L.T($"Turned OFF {n}", $"تم إطفاء {n}") + also;
             case CharacterInstall: return L.T($"Installed the character {n} {h.To}{by}", $"تم تثبيت الشخصية {n} {h.To}{by}");
             case CharacterUpdate:

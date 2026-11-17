@@ -153,28 +153,19 @@ internal static partial class Panel
     private static void DrawFriendCode(Rect area)
     {
         float x = area.x, y = area.y, w = area.width;
-        var store = Online.Store;
-        var missing = new List<StorePackage>();
-        var notOnStore = new List<string>();
-        int have = 0;
-        foreach (var entry in _friendCode)
-        {
-            if (entry.StartsWith("~")) { if (!Catalog.Mods.Any(m => Same(m.Name, entry.Substring(1)))) notOnStore.Add(entry.Substring(1)); else have++; continue; }
-            var pkg = store?.FirstOrDefault(p => p.FullName.Equals(entry, StringComparison.OrdinalIgnoreCase));
-            bool installed = Catalog.Mods.Any(m => m.Source == "Thunderstore:" + entry || (pkg != null && Same(m.Name, pkg.Name)));
-            if (installed) have++;
-            else if (pkg != null) missing.Add(pkg);
-            else notOnStore.Add(entry.Contains('-') ? entry.Substring(entry.IndexOf('-') + 1) : entry);
-        }
+        var d = FriendDiffNow();
+        var missing = d.Missing; var notOnStore = d.NotOnStore; var off = d.Off; var matched = d.Matched; var extra = d.Extra;
+        int have = matched.Count;
 
-        Card(area, new Color(1f, 1f, 1f, 0.04f));
         Label(new Rect(x + 10f, y + 6f, w - 20f, 22f),
             L.T($"Friend's code: {_friendCode.Count} mods  ·  {have} you already have  ·  {missing.Count} to install",
                 $"كود الصديق: {_friendCode.Count} مود  ·  {have} عندك  ·  {missing.Count} للتثبيت"), _small, Color.white, left: true);
-        if (missing.Count > 0)
-            Label(new Rect(x + 10f, y + 28f, w - 250f, 22f), string.Join(", ", missing.Select(p => p.DisplayName)), _small, Green, left: true);
-        if (notOnStore.Count > 0)
-            Label(new Rect(x + 10f, y + 50f, w - 250f, 22f), L.T("Get these yourself (not on Thunderstore): ", "حمّل هذي بنفسك (مو على Thunderstore): ") + string.Join(", ", notOnStore), _small, Gold, left: true);
+        float ly = y + 28f;
+        void Line(string text, Color c) { Label(new Rect(x + 10f, ly, w - 250f, 22f), Fit(text, _small, w - 250f), _small, c, left: true); ly += 22f; }
+        if (missing.Count > 0) Line(L.T("To install: ", "للتثبيت: ") + string.Join(", ", missing.Select(p => p.DisplayName)), Green);
+        if (off.Count > 0) Line(L.T("You have these switched off: ", "عندك هذي بس مطفية: ") + string.Join(", ", off.Select(m => m.Name)), Gold);
+        if (extra.Count > 0) Line(L.T("Only you have these on: ", "هذي شغّالة عندك بس: ") + string.Join(", ", extra.Select(m => m.Name)), Grey);
+        if (notOnStore.Count > 0) Line(L.T("Get these yourself (not on Thunderstore): ", "حمّل هذي بنفسك (مو على Thunderstore): ") + string.Join(", ", notOnStore), Gold);
 
         bool busy = _installQueue.Count > 0 || Installing.Count > 0;
         if (missing.Count > 0 && Btn(new Rect(x + w - 230f, y + 26f, 220f, 34f),
@@ -184,8 +175,93 @@ internal static partial class Panel
             _installedFromCode = 0;
             InstallNextFromCode();
         }
-        if (missing.Count == 0 && notOnStore.Count == 0)
-            Label(new Rect(x + 10f, y + 28f, w - 20f, 22f), L.T("You have all of these. Restart if you just installed them.", "عندك كلها. أعد التشغيل لو توك ثبتها."), _small, Green, left: true);
+        // Match: switch on what's off, and off what only you have (never removed; a second press confirms).
+        if (off.Count + extra.Count > 0 && !busy)
+        {
+            bool sure = _confirmDelete == "<match>" && Time.unscaledTime < _confirmUntil && Time.unscaledTime > _confirmUntil - 5.5f;
+            if (Btn(new Rect(x + w - 230f, y + 66f, 220f, 34f), sure ? L.T("Sure? (switch them)", "متأكد؟ (بدّلها)")
+                    : L.T($"Match: {off.Count} on, {extra.Count} off", $"طابق: {off.Count} تشتغل، {extra.Count} تنطفي"), _button))
+            {
+                if (!sure) { _confirmDelete = "<match>"; _confirmUntil = Time.unscaledTime + 6f; }
+                else { _confirmDelete = null; MatchFriend(off, extra); }
+            }
+        }
+        if (missing.Count == 0 && notOnStore.Count == 0 && off.Count == 0 && extra.Count == 0)
+            Label(new Rect(x + 10f, y + 28f, w - 20f, 22f), L.T("You have exactly the same mods on. Restart if you just changed them.", "عندك نفس المودات بالضبط شغّالة. أعد التشغيل لو توك غيّرتها."), _small, Green, left: true);
+    }
+
+    private sealed class FriendDiff
+    {
+        public List<StorePackage> Missing = new();
+        public List<string> NotOnStore = new();
+        public List<Mod> Off = new();      // the friend has it on, you have it but switched off
+        public List<Mod> Matched = new();  // your mods that are in the friend's list
+        public List<Mod> Extra = new();    // on only for you
+        public object Code, Mods, Store, Nexus;
+    }
+    private static FriendDiff _diff;
+
+    /// <summary>
+    /// The comparison with the pasted code. Drawn several times a frame, so it's worked out once and again only when
+    /// the code, the installed list (a scan makes a new list) or the store lists change.
+    /// </summary>
+    private static FriendDiff FriendDiffNow()
+    {
+        var d = _diff;
+        if (d != null && d.Code == _friendCode && d.Mods == Catalog.Mods && d.Store == Online.Store && d.Nexus == Online.Nexus) return d;
+        d = new FriendDiff { Code = _friendCode, Mods = Catalog.Mods, Store = Online.Store, Nexus = Online.Nexus };
+        var store = Online.Store;
+        foreach (var entry in _friendCode)
+        {
+            Mod mine;
+            if (entry.StartsWith("~")) mine = Catalog.Mods.FirstOrDefault(m => !m.IsHub && Same(m.Name, entry.Substring(1)));
+            else
+            {
+                var pkg = store?.FirstOrDefault(p => p.FullName.Equals(entry, StringComparison.OrdinalIgnoreCase));
+                mine = Catalog.Mods.FirstOrDefault(m => !m.IsHub && (m.Source == "Thunderstore:" + entry || (pkg != null && Same(m.Name, pkg.Name))
+                                                                     || Updates.StorePackageFor(m)?.FullName.Equals(entry, StringComparison.OrdinalIgnoreCase) == true));
+                if (mine == null && pkg != null) { d.Missing.Add(pkg); continue; }
+            }
+            if (mine == null) { d.NotOnStore.Add(entry.StartsWith("~") ? entry.Substring(1) : entry.Contains('-') ? entry.Substring(entry.IndexOf('-') + 1) : entry); continue; }
+            d.Matched.Add(mine);
+            if (!mine.On) d.Off.Add(mine);
+        }
+        d.Extra = ExtrasComparedTo(_friendCode, d.Matched);
+        return _diff = d;
+    }
+
+    /// <summary>
+    /// Your mods that are on but not in the friend's list. Only mods a code can hold count (the same naming as
+    /// ShareCode.Make), and never Mod Hub, characters, Melon Bridge, the character loader, private mods, or a mod that
+    /// one of the friend's mods needs (switching that off would break theirs).
+    /// </summary>
+    private static List<Mod> ExtrasComparedTo(List<string> code, List<Mod> matched)
+    {
+        static string K(string s) => new string((s ?? "").ToLowerInvariant().Where(char.IsLetterOrDigit).ToArray());
+        var entries = new HashSet<string>(code.Select(e => e.StartsWith("~") ? "~" + K(e.Substring(1)) : e.ToLowerInvariant()));
+        var result = new List<Mod>();
+        foreach (var m in Catalog.Mods.Where(m => m.On && !m.IsHub && !m.IsCharacter && !m.Duplicate && m.Guid != Melon.BridgeGuid && !Characters.IsLoader(m.Name, m.Guid)))
+        {
+            if (matched.Contains(m)) continue;
+            string key = Updates.StorePackageFor(m)?.FullName?.ToLowerInvariant()
+                         ?? (Online.Nexus?.Any(n => K(n.Name) == K(m.Name)) == true ? "~" + K(m.Name) : null);
+            if (key == null || entries.Contains(key)) continue; // private, or the friend has it under that name
+            bool needed = matched.Any(f => f.Dependencies.Any(m.Guids.Contains) || m.NeededBy.Any(n => Same(n, f.Name)));
+            if (!needed) result.Add(m);
+        }
+        return result;
+    }
+
+    private static void MatchFriend(List<Mod> turnOn, List<Mod> turnOff)
+    {
+        int on = 0, off = 0;
+        foreach (var m in turnOn) { Catalog.Set(m, true); if (m.On) { on++; History.Add(History.On, m.Name); } }
+        foreach (var m in turnOff) { Catalog.Set(m, false, withDependencies: false); if (!m.On) { off++; History.Add(History.Off, m.Name); } }
+        History.Add(History.FriendMatch, null, detail: L.T($"{on} on, {off} off", $"{on} تشتغل، {off} تنطفي"));
+        Catalog.Scan();
+        Updates.Refresh();
+        Toast(L.T($"Matched: {on} switched on, {off} switched off. Restart the game to play.", $"تمت المطابقة: {on} اشتغلت، {off} انطفت. أعد تشغيل اللعبة.")
+              + (on + off < turnOn.Count + turnOff.Count ? L.T(" Some couldn't be switched (a file is in use).", " بعضها ما تبدّل (ملف مستخدم).") : ""));
     }
 
     private static void InstallNextFromCode()
@@ -218,7 +294,7 @@ internal static partial class Panel
             else if (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter || e.keyCode == KeyCode.Escape) { tb.Focused = false; _typing = null; e.Use(); }
             else if (e.character != '\0' && !char.IsControl(e.character)) { if (tb.Text.Length < tb.Max) tb.Text += e.character; e.Use(); }
         }
-        BorderedCard(box, tb.Focused ? new Color(0.13f, 0.15f, 0.18f, 1f) : new Color(0.1f, 0.115f, 0.14f, 1f), tb.Focused ? Gold : new Color(1f, 1f, 1f, 0.16f), 8f);
+        BorderedCard(box, tb.Focused ? SearchBgFocus : SearchBg, tb.Focused ? Gold : new Color(1f, 1f, 1f, 0.16f), 8f);
         var text = new Rect(box.x + 10f, box.y + 6f, box.width - 20f, box.height - 8f);
         if (tb.Text.Length == 0 && !tb.Focused) { Label(text, placeholder, _small, Grey, left: true); return; }
         bool caret = tb.Focused && (int)(Time.unscaledTime * 2f) % 2 == 0;

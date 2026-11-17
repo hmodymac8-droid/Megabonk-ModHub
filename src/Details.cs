@@ -30,6 +30,7 @@ internal static partial class Panel
     private static void OpenDetails(StorePackage p) { _details = p; _detailScroll = 0; _blocks = null; }
     private static bool CloseDetails()
     {
+        if (_suggest) { _suggest = false; if (_typing == _sgText || _typing == _sgLink) _typing = null; return true; }
         if (_history) { _history = false; return true; }
         if (_whatsNew != null) { _whatsNew = null; return true; }
         if (_details == null) return false;

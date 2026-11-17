@@ -19,6 +19,9 @@ internal sealed class InstallCheck
     public string FolderName;         // folder inside BepInEx\plugins
     public Loader Loader;
     public List<string> ThunderstoreDeps = new();
+    public bool NoPlugin;               // no mod in it at all (on Thunderstore that's a modpack: only a list of requirements)
+    public List<string> Guids = new();  // every BepInEx plugin inside
+    public List<string> Needs = new();  // GUIDs of the plugins it needs ([BepInDependency]), not counting its own
     public string Note;               // a warning that doesn't stop the install ("Might not work: ...")
     public bool IsCharacter;          // a custom character/skin: nothing to place here, Characters does the install
     // zip entry -> path relative to the BepInEx folder ("plugins/<folder>/...", "melon-mods/<folder>/...", "config/...")
@@ -204,7 +207,14 @@ internal static class Installer
             return Fail(L.T("This mod is made for a different game or an older BepInEx, not for Megabonk.",
                             "هذا المود مصنوع للعبة ثانية أو لنسخة BepInEx قديمة، مو لـ Megabonk."));
         if (plugin != null)
-            return new InstallCheck { Ok = true, Loader = Loader.BepInEx, ModName = plugin.Name, Version = plugin.Version, Guid = plugin.Guid };
+        {
+            var c = new InstallCheck { Ok = true, Loader = Loader.BepInEx, ModName = plugin.Name, Version = plugin.Version, Guid = plugin.Guid };
+            foreach (var m in metas) if (m.Guid != null) c.Guids.Add(m.Guid);
+            foreach (var m in metas)
+                foreach (var dep in m.Dependencies)
+                    if (!c.Guids.Contains(dep) && !c.Needs.Contains(dep)) c.Needs.Add(dep);
+            return c;
+        }
         var melon = metas.FirstOrDefault(m => m.Loader == Loader.MelonLoader && m.Name != null) ?? metas.FirstOrDefault(m => m.Loader == Loader.MelonLoader);
         if (melon != null)
         {
@@ -217,7 +227,9 @@ internal static class Installer
                 };
             return new InstallCheck { Ok = true, Loader = Loader.MelonLoader, ModName = melon.Name, Version = melon.Version, Guid = melon.Name != null ? "melon:" + melon.Name : null };
         }
-        return Fail(L.T("No BepInEx mod found in this file.", "ما فيه مود BepInEx في هذا الملف."));
+        var none = Fail(L.T("No BepInEx mod found in this file.", "ما فيه مود BepInEx في هذا الملف."));
+        none.NoPlugin = true;
+        return none;
     }
 
     private const string UserData = "@userdata/";
@@ -324,7 +336,8 @@ internal static class Installer
     }
 
     /// <summary>Installs what <see cref="Check"/> found. Returns the plugins folder name, or null.</summary>
-    public static string Install(string path, InstallCheck c, string source, string packageVersion = null)
+    /// <param name="neededFor">The mod this one came along for as a requirement (null when the player chose it).</param>
+    public static string Install(string path, InstallCheck c, string source, string packageVersion = null, string neededFor = null)
     {
         if (!c.Ok) return null;
         bool melon = c.Loader == Loader.MelonLoader;
@@ -384,7 +397,8 @@ internal static class Installer
             if (Characters.IsLoader(c.ModName, c.Guid)) flags.Add("loader");
             History.Add(replaced == null ? History.Install : History.Update, c.ModName ?? c.FolderName,
                         replaced == null ? null : Updates.HaveVersion(replaced), packageVersion ?? c.Version, source,
-                        flags.Count > 0 ? string.Join(",", flags) : null);
+                        flags.Count > 0 ? string.Join(",", flags) : null, neededFor);
+            if (neededFor != null) Catalog.NoteNeededBy(id, neededFor);
             Catalog.NoteInstalled(id);
             Plugin.Logger.LogInfo($"Installed {c.ModName} {c.Version} into {c.Base}{c.FolderName} (from {source ?? path}).");
             return id;
