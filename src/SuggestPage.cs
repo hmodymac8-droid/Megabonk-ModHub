@@ -6,13 +6,13 @@ namespace ModHub;
 
 /// <summary>
 /// "Suggest / request": players send an idea for Mod Hub or ask for a mod. Nothing is sent from the game and no key
-/// is built in: "Send on GitHub" opens a new GitHub issue on hmodymac8-droid/ModHub in the browser with the text
+/// is built in: "Send on GitHub" opens a new GitHub issue on the Hub's repo (Online.HubRepo) in the browser with the text
 /// filled in, and the player presses Submit there. Players without a GitHub account copy the text and post it in
 /// the Nexus comments instead. Only the Hub and game versions are added, nothing personal.
 /// </summary>
 internal static partial class Panel
 {
-    private const string IssuesUrl = "https://github.com/hmodymac8-droid/ModHub/issues/new";
+    private const string IssuesUrl = "https://github.com/" + Online.HubRepo + "/issues/new";
     private const string NexusPostsUrl = "https://www.nexusmods.com/megabonk/mods/194?tab=posts";
 
     private static bool _suggest;                   // the page is open
