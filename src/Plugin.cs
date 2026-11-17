@@ -18,11 +18,15 @@ public class Plugin : BasePlugin
 {
     public const string Guid = "modhub.megabonk";
     public const string Name = "Mod Hub";
-    public const string Version = "1.2.4";
+    public const string Version = "1.2.6";
 
     internal static ManualLogSource Logger;
     internal static ConfigEntry<KeyCode> OpenKey;
     internal static ConfigEntry<string> Language;
+    internal static ConfigEntry<string> Theme;
+
+    /// <summary>Index of the chosen look in Panel.ThemeNames (0 = Classic).</summary>
+    internal static int ThemeIndex() { int i = System.Array.IndexOf(Panel.ThemeNames, Theme.Value); return i < 0 ? 0 : i; }
 
     public override void Load()
     {
@@ -31,6 +35,10 @@ public class Plugin : BasePlugin
         Language = Config.Bind("General", "Language", "Auto",
             new ConfigDescription("Language of Mod Hub. Auto = Arabic when Megabonk Arabic has the game in Arabic.",
                 new AcceptableValueList<string>("Auto", "English", "Arabic")));
+
+        Theme = Config.Bind("General", "Theme", "Classic",
+            new ConfigDescription("Look of Mod Hub. Also switchable with the Theme button in the Hub.",
+                new AcceptableValueList<string>("Classic", "Ember", "Moss", "Abyss", "Plum", "Iron", "Crimson", "Flat")));
 
         Catalog.Load();
         Safety.Begin();
@@ -102,6 +110,7 @@ public class HubBehaviour : MonoBehaviour
             _scanned = true;
             try { Catalog.Scan(); } catch (Exception e) { Plugin.Logger.LogWarning($"Mod scan: {e.Message}"); }
             try { WhatsNew.CheckAtStart(); } catch (Exception e) { Plugin.Logger.LogWarning($"What's new: {e.Message}"); }
+            try { GameVersion.CheckAtStart(); } catch (Exception e) { Plugin.Logger.LogWarning($"Game version: {e.Message}"); }
         }
         Online.RunPending();
         Online.Tick();
@@ -111,7 +120,13 @@ public class HubBehaviour : MonoBehaviour
         // Mods updated since the last start: show their notes once, right when the game starts (after the crash-safety message, if any).
         if (!_whatsNewShown && _scanned && !Safety.NeedsAttention && WhatsNew.Unseen.Count > 0)
         { _whatsNewShown = true; Panel.ShowWhatsNew(); }
+        // Megabonk itself was updated: open the Hub on its warning, only on the start that noticed it, and not over the
+        // crash message or What's new (the banner shows above every page anyway, until OK).
+        if (!_gameUpdateShown && _scanned && !Safety.NeedsAttention && !_whatsNewShown && GameVersion.JustNoticed && Time.realtimeSinceStartup > 20f)
+        { _gameUpdateShown = true; Panel.ShowSafety(); }
     }
+
+    private bool _gameUpdateShown;
 
     public void OnApplicationQuit()
     {

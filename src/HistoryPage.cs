@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
 namespace ModHub;
@@ -25,11 +26,18 @@ internal static partial class Panel
     {
         float x = body.x, y = body.y, w = body.width;
         if (Btn(new Rect(L.Arabic ? x + w - 110f : x, y, 110f, 30f), L.T("< Back", "رجوع >"), _button)) { CloseDetails(); return; }
-        Label(new Rect(x + 124f, y + 2f, w - 248f - 60f, 28f), L.T("History", "السجل"), _title, Gold);
+        Label(new Rect(L.Arabic ? x + 360f : x + 124f, y + 2f, w - 484f, 28f), L.T("History", "السجل"), _title, Gold);
         // Copy: players paste this when they ask for help ("what did the Hub change?").
         if (Btn(new Rect(L.Arabic ? x : x + w - 170f, y, 170f, 30f), L.T("Copy history", "انسخ السجل"), _button))
             Toast(SetClipboard(History.AsText()) ? L.T("History copied. Paste it where you ask for help (Ctrl+V).", "تم نسخ السجل. الصقه وين ما تطلب المساعدة (Ctrl+V).")
                                                  : L.T("Could not reach the clipboard.", "تعذر الوصول للحافظة."));
+        // Report a problem: mods, versions, clashes, history and this session's errors, with personal details removed.
+        if (Btn(new Rect(L.Arabic ? x + 178f : x + w - 348f, y, 170f, 30f), L.T("Copy report", "انسخ تقرير"), _buttonOn))
+        {
+            Conflicts.Check();
+            Toast(SetClipboard(Report.Make()) ? L.T("Report copied (no personal details). Paste it where you ask for help (Ctrl+V).", "تم نسخ التقرير (بدون معلوماتك الشخصية). الصقه وين ما تطلب المساعدة (Ctrl+V).")
+                                              : L.T("Could not reach the clipboard.", "تعذر الوصول للحافظة."));
+        }
         y += 40f;
 
         var view = new Rect(x, y, w, body.yMax - y);
@@ -60,9 +68,22 @@ internal static partial class Panel
             }
             foreach (var line in Wrap($"{local:HH:mm}   {History.Text(h)}", _small, width))
                 list.Add(new Block { Text = line, Style = _small, Color = Color.white, Height = 21f });
+            if (History.CanPutBack(h))
+                list.Add(new Block { Text = L.T("Put back", "رجّعه"), Click = () => PutBackMod(h), Height = 36f });
         }
         _hBlocks = list;
         _hKey = key;
         return list;
+    }
+
+    private static void PutBackMod(HistoryEntry h)
+    {
+        bool ok = Catalog.PutBack(h, out string problem);
+        Catalog.Scan();
+        Updates.Refresh();
+        if (!ok) { Toast(L.T($"Couldn't put {h.Name} back: {problem}.", $"ما قدرت أرجّع {h.Name}: {problem}.")); return; }
+        // Removed and put back in the same session: the game never stopped running it.
+        bool restart = Catalog.Mods.FirstOrDefault(m => m.Id == h.Id)?.WillChange ?? true;
+        Toast(L.T($"{h.Name} is back.", $"{h.Name} رجع.") + (restart ? L.T(" Restart the game to use it.", " أعد تشغيل اللعبة لاستخدامه.") : ""));
     }
 }

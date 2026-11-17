@@ -86,7 +86,7 @@ internal static class Online
     /// Mod Hub updates itself from the releases of its public GitHub repo: GitHub allows direct downloads, Nexus
     /// doesn't (without Premium), and Thunderstore doesn't list the Hub. The Nexus page stays the main home.
     /// </summary>
-    public const string HubRepo = "hmodymac8-droid/ModHub";
+    public const string HubRepo = "hmodymac8-droid/Megabonk-ModHub";
 
     internal sealed class HubRelease { public string Version, ZipUrl; }
     public static volatile HubRelease Release;   // the newest Mod Hub on GitHub (null = not known)
@@ -360,15 +360,28 @@ internal static class Online
     public static volatile bool LastInstallOk;
 
     /// <param name="intoFolder">Install into this plugins folder (used for updates, so a mod keeps its folder).</param>
-    public static void InstallFromStore(StorePackage pkg, Action<string> done, string intoFolder = null)
+    /// <param name="mustHave">Only install it if this plugin GUID is inside (the package was found by its name).</param>
+    /// <param name="neededFor">The mod it's being installed for, when it's a requirement.</param>
+    public static void InstallFromStore(StorePackage pkg, Action<string> done, string intoFolder = null, string mustHave = null, string neededFor = null)
     {
         Background("ModHub-Install", () =>
         {
             var installed = new List<string>();
             string error = null;
-            void InstallOne(StorePackage p, int depth)
+            void InstallOne(StorePackage p, int depth, string forMod = null)
             {
                 if (depth > 5) return;
+                string tmp = Path.Combine(Path.GetTempPath(), $"ModHub-{p.FullName}-{p.Version}.zip");
+                var bytes = Http.GetByteArrayAsync(p.DownloadUrl).GetAwaiter().GetResult();
+                File.WriteAllBytes(tmp, bytes);
+                var check = Installer.Check(tmp);
+                if (depth == 0 && mustHave != null && !check.Guids.Contains(mustHave))
+                {
+                    // Checked before its own requirements come in, so a wrong package leaves nothing behind.
+                    error ??= L.T($"{p.DisplayName} isn't the mod that's needed ({mustHave})", $"{p.DisplayName} مو المود المطلوب ({mustHave})");
+                    try { File.Delete(tmp); } catch { }
+                    return;
+                }
                 foreach (var dep in p.Dependencies)
                 {
                     // Dependency strings look like "Owner-Name-1.2.3".
@@ -380,16 +393,12 @@ internal static class Online
                     // package name with the same plugin inside, so the old copy is moved aside by its GUID).
                     if (id.IndexOf("CustomCharacterCreator", StringComparison.OrdinalIgnoreCase) >= 0)
                     {
-                        if (Characters.LoaderNeedsUpdate(Characters.FindLoader()) && Characters.PreferredLoader() is { } loader) InstallOne(loader, depth + 1);
+                        if (Characters.LoaderNeedsUpdate(Characters.FindLoader()) && Characters.PreferredLoader() is { } loader) InstallOne(loader, depth + 1, p.DisplayName);
                         continue;
                     }
                     var depPkg = Store?.FirstOrDefault(x => x.FullName == id);
-                    if (depPkg != null && !Catalog.Mods.Any(m => m.Source == "Thunderstore:" + id)) InstallOne(depPkg, depth + 1);
+                    if (depPkg != null && !Catalog.Mods.Any(m => m.Source == "Thunderstore:" + id)) InstallOne(depPkg, depth + 1, p.DisplayName);
                 }
-                string tmp = Path.Combine(Path.GetTempPath(), $"ModHub-{p.FullName}-{p.Version}.zip");
-                var bytes = Http.GetByteArrayAsync(p.DownloadUrl).GetAwaiter().GetResult();
-                File.WriteAllBytes(tmp, bytes);
-                var check = Installer.Check(tmp);
                 if (check.IsCharacter)
                 {
                     // Not a plugin: the character files go into BepInEx\plugins\CustomCharacters.
@@ -407,15 +416,23 @@ internal static class Online
                     try { File.Delete(tmp); } catch { }
                     return;
                 }
+                if (check.NoPlugin && p.Dependencies.Count > 0)
+                {
+                    // A modpack: nothing of its own to place, its mods came in above as requirements.
+                    installed.Add(p.DisplayName);
+                    History.Add(History.Install, p.DisplayName, to: p.Version, source: "Thunderstore:" + p.FullName);
+                    try { File.Delete(tmp); } catch { }
+                    return;
+                }
                 if (!check.Ok) { error ??= $"{p.DisplayName}: {check.Problem}"; return; }
                 if (depth == 0 && intoFolder != null) Installer.Retarget(check, intoFolder);
                 else if (!check.Files.Exists(f => f.Target.StartsWith(check.Base) && !f.Target.StartsWith($"{check.Base}{check.FolderName}/")))
                     Installer.Retarget(check, p.FullName); // stable folder per package, like r2modman
-                if (Installer.Install(tmp, check, "Thunderstore:" + p.FullName, p.Version) != null) installed.Add(p.DisplayName);
+                if (Installer.Install(tmp, check, "Thunderstore:" + p.FullName, p.Version, forMod) != null) installed.Add(p.DisplayName);
                 else error ??= p.DisplayName;
                 try { File.Delete(tmp); } catch { }
             }
-            try { InstallOne(pkg, 0); }
+            try { InstallOne(pkg, 0, neededFor); }
             catch (Exception e) { error = e.Message; }
             OnMain(() =>
             {
@@ -517,6 +534,7 @@ internal static class Updates
                 m.Latest = pkg.Version; m.CanUpdateInHub = !pkg.NeedsMelon || Melon.BridgeInstalled;
             }
         }
+        Requirements.Refresh();
     }
 
     /// <summary>
@@ -551,7 +569,7 @@ internal static class Updates
     }
 
     private static string Key(string s) => new string((s ?? "").ToLowerInvariant().Where(char.IsLetterOrDigit).ToArray());
-    private static bool Same(string a, string b) { var x = Key(a); return x.Length > 2 && x == Key(b); }
+    public static bool Same(string a, string b) { var x = Key(a); return x.Length > 2 && x == Key(b); }
 
     public static bool Newer(string latest, string current)
     {
@@ -642,6 +660,7 @@ internal static class LocalFiles
             if (!ReadyToRead(file)) continue; // still being copied
             var check = Installer.Check(file);
             string sub = check.Ok && Installer.Install(file, check, "Drop folder") != null ? "installed" : "not installed";
+            if (sub == "installed") Requirements.Add(check);
             messages.Add(check.Ok && sub == "installed"
                 ? L.T($"Installed {check.ModName} from the drop folder. Restart the game to use it.", $"تم تثبيت {check.ModName} من مجلد الإسقاط. أعد تشغيل اللعبة.")
                 : L.T($"{Path.GetFileName(file)}: {check.Problem}", $"{Path.GetFileName(file)}: {check.Problem}"));

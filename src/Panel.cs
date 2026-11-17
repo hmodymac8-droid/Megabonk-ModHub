@@ -34,12 +34,10 @@ internal static partial class Panel
     private static Texture2D _white;
     private static GUIStyle _title, _sub, _row, _small, _button, _buttonOn, _badge;
 
-    private static readonly Color Bg = new(0.07f, 0.08f, 0.1f, 0.96f);
-    private static readonly Color Gold = new(1f, 0.82f, 0.25f);
-    private static readonly Color Grey = new(0.68f, 0.7f, 0.75f);
-    private static readonly Color Green = new(0.45f, 0.9f, 0.5f);
-    private static readonly Color Red = new(1f, 0.45f, 0.4f);
-    private static readonly Color Blue = new(0.45f, 0.75f, 1f);
+    private static Color Bg, Gold, Grey;
+    private static Color Green = new(0.45f, 0.9f, 0.5f);
+    private static Color Red = new(1f, 0.45f, 0.4f);
+    private static Color Blue = new(0.45f, 0.75f, 1f);
 
     public static void LogOnce(string what, Exception e)
     {
@@ -65,6 +63,7 @@ internal static partial class Panel
             Catalog.Scan();
             Online.LoadStore();
             Safety.CountErrors();
+            Conflicts.Check(); // each time: some mods patch the game later on
             Catalog.MeasureRemoved();
             Online.LoadNexus();
             Online.LoadHubRelease();
@@ -158,12 +157,18 @@ internal static partial class Panel
         }
         if (!Open) return;
 
+        // On top of other mods' windows, and they get the mouse after us (lower depth = drawn last, gets events first).
+        try { GUI.depth = -1000; } catch (Exception ex) { LogOnce("GUI depth", ex); }
         EnsureStyles();
         float scale = Mathf.Clamp(Screen.height / 1080f, 0.75f, 2.5f);
         var old = GUI.matrix;
         GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(scale, scale, 1f));
         try { Draw(e, Screen.width / scale, Screen.height / scale); NavEndFrame(e); }
         finally { GUI.matrix = old; }
+        // The Hub is a modal window: a click (or wheel) that no Hub button took must not reach another mod's window
+        // behind it. Game menus are blocked by InputGuard below.
+        if (e != null && (e.type == EventType.MouseDown || e.type == EventType.MouseUp || e.type == EventType.MouseDrag || e.type == EventType.ScrollWheel))
+            e.Use();
 
         InputGuard.Update(true, true);
         CursorGuard.Hold();
@@ -173,15 +178,21 @@ internal static partial class Panel
     {
         _panel = new Rect((sw - W) / 2f, Mathf.Max(10f, (sh - H) / 2f), W, H);
         var mouse = e.mousePosition;
-        Card(new Rect(_panel.x - 1.5f, _panel.y - 1.5f, _panel.width + 3f, _panel.height + 3f), new Color(1f, 0.82f, 0.25f, 0.55f), 14f);
-        Card(_panel, PanelBg, 13f);
+        ApplyTheme(Plugin.ThemeIndex());
+        if (Chunky) Card(new Rect(_panel.x - BorderThickness, _panel.y - BorderThickness + 6f, W + 2f * BorderThickness, H + 2f * BorderThickness), InkCol, PanelRadius + 1f);
+        Card(new Rect(_panel.x - BorderThickness, _panel.y - BorderThickness, _panel.width + 2f * BorderThickness, _panel.height + 2f * BorderThickness), BorderCol, PanelRadius + 1f);
+        Card(_panel, PanelBg, PanelRadius);
+        if (Chunky) HeaderBand();
         float x = _panel.x + 22f, y = _panel.y + 14f, w = W - 44f;
 
+        if (Chunky)
+            foreach (var o in new[] { new Vector2(-2f, 0f), new Vector2(2f, 0f), new Vector2(0f, -2f), new Vector2(0f, 2f), new Vector2(-1.5f, -1.5f), new Vector2(1.5f, -1.5f), new Vector2(-1.5f, 1.5f), new Vector2(1.5f, 1.5f) })
+                Label(new Rect(x + o.x, y + o.y, w, 30f), L.T("Mod Hub", "مركز المودات"), _title, InkCol);
         Label(new Rect(x, y, w, 30f), L.T("Mod Hub", "مركز المودات"), _title, Gold);
         // Restart button, always there (asks "Sure?" first so a stray click never ends a run).
         var restartRect = new Rect(L.Arabic ? x : x + w - 160f, y, 160f, 28f);
         bool sureRestart = _confirmRemove == "<restart>" && Time.unscaledTime < _confirmUntil && Time.unscaledTime > _confirmUntil - 5.5f;
-        if (Btn(restartRect, sureRestart ? L.T("Sure? Restart", "متأكد؟ أعد التشغيل") : L.T("Restart game", "أعد تشغيل اللعبة"), _button))
+        if (Btn(restartRect, sureRestart ? L.T("Sure? Restart", "متأكد؟ أعد التشغيل") : L.T("Restart game", "أعد تشغيل اللعبة"), Chunky ? _buttonOn : _button, IconRestart))
         {
             if (sureRestart) Plugin.Restart();
             else { _confirmRemove = "<restart>"; _confirmUntil = Time.unscaledTime + 6f; }
@@ -190,8 +201,11 @@ internal static partial class Panel
         var keyRect = new Rect(L.Arabic ? x + 168f : x + w - 160f - 8f - 150f, y, 150f, 28f);
         if (Btn(keyRect, _pickingKey ? L.T("Press a key...", "اضغط أي زر...") : L.T($"Open key: {Plugin.OpenKey.Value}", $"زر الفتح: {Plugin.OpenKey.Value}"), _pickingKey ? _buttonOn : _button))
             { _pickingKey = !_pickingKey; _warnedKey = KeyCode.None; }
+        var themeRect = new Rect(L.Arabic ? x + 330f : x + 140f, y, 160f, 28f);
+        if (Btn(themeRect, "Theme: " + ThemeNames[Plugin.ThemeIndex()], _button)) Plugin.Theme.Value = ThemeNames[(Plugin.ThemeIndex() + 1) % ThemeNames.Length];
         var hintRect = L.Arabic ? new Rect(x + 330f, y + 4f, w - 330f, 24f) : new Rect(x, y + 4f, w - 330f, 24f);
-        Label(hintRect, L.T($"[{Plugin.OpenKey.Value}] or [Esc] to close", $"[{Plugin.OpenKey.Value}] أو [Esc] للإغلاق"), _small, Grey, right: !L.Arabic, left: L.Arabic);
+        if (Chunky && !L.Arabic && Plugin.OpenKey.Value.ToString().Length <= 8) KeyHint(hintRect, Plugin.OpenKey.Value.ToString());
+        else Label(hintRect, L.T($"[{Plugin.OpenKey.Value}] or [Esc] to close", $"[{Plugin.OpenKey.Value}] أو [Esc] للإغلاق"), _small, Grey, right: !L.Arabic, left: L.Arabic);
         y += 38f;
 
         // Tabs
@@ -229,6 +243,61 @@ internal static partial class Panel
                         goBack ? L.T("Go back & restart", "ارجع للسابقة وأعد التشغيل") : L.T("Turn them off & restart", "اطفيها وأعد التشغيل"), _buttonOn))
                 { Safety.FixSuspects(); Plugin.Restart(); }
                 if (Btn(new Rect(banner.xMax - 152f, y + 30f, 142f, 30f), L.T("Keep them", "خلها"), _button)) Safety.Dismiss();
+            }
+            y += 72f;
+        }
+
+        // Megabonk itself was updated: mods made for the old version can stop working. Not on top of the crash message.
+        else if (GameVersion.Updated)
+        {
+            var updatable = Catalog.Mods.Where(m => m.Latest != null && m.CanUpdateInHub && !m.IsHub).ToList();
+            var banner = new Rect(x, y, w, 64f);
+            Card(banner, new Color(1f, 0.8f, 0.3f, 0.14f));
+            Label(new Rect(x + 12f, y + 6f, w - 24f, 24f), Fit(L.T($"Megabonk was updated ({GameVersion.Number}). Mods made for the old version can stop working.",
+                $"Megabonk تحدّثت ({GameVersion.Number}). المودات المصنوعة للنسخة القديمة ممكن توقف."), _row, w - 24f), _row, Gold);
+            string what = updatable.Count > 0
+                ? L.T($"{updatable.Count} have an update: ", $"{updatable.Count} لها تحديث: ") + string.Join(", ", updatable.Select(m => m.Name))
+                : L.T("No updates for your mods yet. If something breaks, try vanilla mode until they update.", "ما فيه تحديثات لموداتك للحين. لو خرب شيء، جرّب وضع اللعبة الأصلية لين تتحدّث.");
+            Label(new Rect(x + 12f, y + 34f, w - 470f, 22f), Fit(what, _small, w - 470f), _small, Color.white);
+            float gx = banner.xMax - 90f;
+            if (Btn(new Rect(gx, y + 30f, 80f, 30f), L.T("OK", "تمام"), _button)) GameVersion.Dismiss();
+            gx -= 158f;
+            if (!Catalog.Vanilla && Btn(new Rect(gx, y + 30f, 150f, 30f), L.T("Vanilla mode", "وضع اللعبة الأصلية"), _button))
+            { Catalog.EnterVanilla(); Catalog.Scan(); Updates.Refresh(); Toast(L.T("All mods will be off after restart.", "كل المودات بتنطفي بعد إعادة التشغيل.")); }
+            gx -= 168f;
+            if (updatable.Count > 0 && _updateQueue.Count == 0 && !_updatingAll && Btn(new Rect(gx, y + 30f, 160f, 30f), L.T($"Update all ({updatable.Count})", $"حدّث الكل ({updatable.Count})"), _buttonOn))
+                UpdateAll(updatable);
+            y += 72f;
+        }
+
+        // A mod from Downloads or the drop folder that needs other mods
+        if (Requirements.Needs.Count > 0)
+        {
+            var needs = Requirements.Needs;
+            bool canInstall = needs.Any(n => n.Package != null || n.ModId != null);
+            var nexusPages = needs.Where(n => n.PageUrl != null).ToList();
+            string names = string.Join(", ", needs.Select(n => n.Name + (n.ModId != null ? L.T(" (off)", " (مطفي)")
+                : n.PageUrl != null ? " (Nexus)" : n.Package == null ? L.T(" (not found)", " (ما لقيته)") : "")));
+            var banner = new Rect(x, y, w, 64f);
+            Card(banner, new Color(1f, 0.8f, 0.3f, 0.14f));
+            Label(new Rect(x + 12f, y + 6f, w - 24f, 24f), Fit(L.T($"{Requirements.For} needs these mods to load:", $"{Requirements.For} يحتاج هذي المودات عشان يشتغل:"), _row, w - 24f), _row, Gold);
+            Label(new Rect(x + 12f, y + 34f, w - 430f, 22f), Fit(names, _small, w - 430f), _small, Color.white);
+            float nx = banner.xMax - 110f;
+            if (Btn(new Rect(nx, y + 30f, 100f, 30f), L.T("Not now", "مو الحين"), _button)) Requirements.Dismiss();
+            if (nexusPages.Count > 0 && Edition.Nexus)
+            {
+                nx -= 138f;
+                if (Btn(new Rect(nx, y + 30f, 130f, 30f), L.T("Open Nexus", "افتح Nexus"), _button))
+                {
+                    foreach (var n in nexusPages) Application.OpenURL(n.PageUrl);
+                    Toast(L.T("Click Manual download. Mod Hub installs it from your Downloads (Get mods tab).", "اضغط Manual download، والـ Mod Hub يثبته من التنزيلات (تبويب تحميل مودات)."));
+                }
+            }
+            if (canInstall)
+            {
+                nx -= 158f;
+                if (_installingNeeds) Label(new Rect(nx, y + 34f, 150f, 22f), L.T("Installing...", "جاري التثبيت..."), _small, Gold, right: true);
+                else if (Btn(new Rect(nx, y + 30f, 150f, 30f), L.T("Install them", "ثبّتها"), _buttonOn)) InstallNeeds();
             }
             y += 72f;
         }
@@ -283,7 +352,7 @@ internal static partial class Panel
         if (changes > 0)
         {
             var banner = new Rect(x, y, w, 38f);
-            Card(banner, new Color(1f, 0.82f, 0.25f, 0.15f));
+            BannerBox(banner, new Color(1f, 0.82f, 0.25f, 0.15f));
             Label(new Rect(x + 12f, y + 9f, w - 200f, 22f),
                 L.T($"{changes} change(s) apply when the game restarts.", $"{changes} تغيير/تغييرات تنطبق بعد إعادة تشغيل اللعبة."), _row, Gold);
             if (Btn(new Rect(banner.xMax - 176f, y + 4f, 170f, 30f), L.T("Restart game now", "أعد تشغيل اللعبة"), _buttonOn)) Plugin.Restart();
@@ -309,6 +378,7 @@ internal static partial class Panel
 
         // Footer / toast
         var foot = new Rect(x, _panel.yMax - 34f, w, 24f);
+        if (Chunky) Fill(new Rect(_panel.x, foot.y - 6f, W, 1.5f), new Color(Gold.r, Gold.g, Gold.b, 0.25f));
         if (_toast != null && Time.unscaledTime < _toastUntil) Label(foot, _toast, _row, Green);
         else if (_padMode) Label(foot, PadHint(), _small, Gold);
         else Label(foot, L.T("Changes take effect when the game restarts. Nothing is ever deleted: removed mods go to BepInEx\\_hub_removed.",
@@ -322,6 +392,7 @@ internal static partial class Panel
 
     private static void DrawInstalled(Event e, Vector2 mouse, Rect body)
     {
+        if (_suggest) { DrawSuggest(e, mouse, body); return; }
         if (_history) { DrawHistory(e, mouse, body); return; }
         if (_whatsNew != null) { DrawWhatsNew(e, mouse, body); return; }
         if (_details != null) { DrawDetails(e, mouse, body); return; }
@@ -330,7 +401,9 @@ internal static partial class Panel
             L.T($"{mods.Count} mods found", $"تم العثور على {mods.Count} مود"), _small, Grey, left: true);
 
         // What the Hub did (installs, updates, removals, switches): players paste it when asking for help.
-        if (Btn(new Rect(body.xMax - 538f, body.y, 130f, 30f), L.T("History", "السجل"), _button)) { OpenHistory(); return; }
+        if (Btn(new Rect(body.xMax - 538f, body.y, 130f, 30f), L.T("History", "السجل"), _button, IconClock)) { OpenHistory(); return; }
+        // Ideas for the Hub and mod requests (opens a filled-in GitHub issue; nothing is sent from the game).
+        if (Btn(new Rect(body.xMax - 676f, body.y, 130f, 30f), L.T("Suggest", "اقترح"), _button)) { OpenSuggest(false); return; }
 
         // Old copies and removed mods pile up in BepInEx\_hub_removed: let the player clear them (after a second click).
         if (Catalog.RemovedCount > 0)
@@ -339,7 +412,7 @@ internal static partial class Panel
             string size = Catalog.RemovedBytes >= 1024 * 1024 ? $"{Catalog.RemovedBytes / (1024f * 1024f):0.0} MB" : $"{Catalog.RemovedBytes / 1024f:0} KB";
             if (Btn(new Rect(body.xMax - 400f, body.y, 202f, 30f), sure
                     ? L.T("Delete for good? (no going back)", "حذف نهائي؟ (بدون رجوع)")
-                    : L.T($"Empty removed ({size})", $"فرّغ المحذوفات ({size})"), _button))
+                    : L.T($"Empty removed ({size})", $"فرّغ المحذوفات ({size})"), _button, IconTrash))
             {
                 if (sure)
                 {
@@ -371,6 +444,37 @@ internal static partial class Panel
     private static readonly Queue<Mod> _updateQueue = new();
     private static bool _updatingAll;
     private static int _updatedCount;
+
+    private static bool _installingNeeds;
+
+    /// <summary>The banner's "Install them": switches on what's off, then installs the rest one by one.</summary>
+    private static void InstallNeeds()
+    {
+        var needs = Requirements.Needs;
+        foreach (var n in needs.Where(n => n.ModId != null))
+            if (Catalog.Mods.FirstOrDefault(m => m.Id == n.ModId) is { } off)
+            {
+                Catalog.Set(off, true);
+                if (off.On) { History.Add(History.On, off.Name, neededFor: n.For); Catalog.NoteNeededBy(off.Id, n.For); }
+            }
+        var queue = new Queue<Need>(needs.Where(n => n.Package != null));
+        string failed = null;
+        void Next()
+        {
+            if (queue.Count == 0)
+            {
+                _installingNeeds = false;
+                Catalog.Scan();
+                Updates.Refresh();
+                Toast(failed ?? L.T("Done. Restart the game to use them.", "تم. أعد تشغيل اللعبة لاستخدامها."));
+                return;
+            }
+            var need = queue.Dequeue();
+            Online.InstallFromStore(need.Package, msg => { if (!Online.LastInstallOk) failed ??= msg; Next(); }, mustHave: need.MustHave, neededFor: need.For);
+        }
+        _installingNeeds = true;
+        Next();
+    }
 
     /// <summary>Updates one mod: inside the Hub when it's on Thunderstore, otherwise opens its page.</summary>
     private static void UpdateMod(Mod m, Action<string> after = null)
@@ -486,39 +590,92 @@ internal static partial class Panel
         {
             History.Add(History.CancelInstall, m.Name);
             Catalog.ForgetInstalled(m.Id);
+            Catalog.ForgetNeededBy(m);
             Toast(L.T($"Install cancelled: {m.Name} is gone again. Nothing to restart.", $"تم إلغاء التثبيت: {m.Name} انشال. ما تحتاج تعيد التشغيل."));
         }
         Catalog.Scan();
         Updates.Refresh();
     }
 
+    /// <summary>Moves one mod or character to _hub_removed and records it (Put back works from History).</summary>
+    private static bool RemoveOne(Mod m)
+    {
+        string stored = null;
+        bool removed = m.IsCharacter ? Characters.Remove(m, out stored) : Catalog.Uninstall(m, out stored);
+        if (!removed) return false;
+        History.AddRemoved(m, stored);
+        Catalog.ForgetInstalled(m.Id);
+        Catalog.ForgetNeededBy(m);
+        return true;
+    }
+
+    private static void RemoveMod(Mod m)
+    {
+        if (RemoveOne(m)) Toast(L.T($"{m.Name} removed (moved to BepInEx\\_hub_removed).", $"تم حذف {m.Name} (نُقل إلى BepInEx\\_hub_removed)."));
+        else Toast(L.T($"{m.Name} could not be removed: a file is still in use. Close the game and try again.", $"{m.Name}: تعذر الحذف، ملف لا يزال مستخدماً. سكّر اللعبة وحاول مرة ثانية."));
+        Catalog.Scan();
+        Updates.Refresh();
+    }
+
+    /// <summary>Removes a mod and the mods that came with it.</summary>
+    private static void RemoveWith(Mod m, List<Mod> also)
+    {
+        int done = also.Count(RemoveOne); // what came along first, while the main mod still counts as who needed it
+        if (RemoveOne(m)) done++;
+        Toast(done == also.Count + 1
+            ? L.T($"{m.Name} and {also.Count} more removed (moved to BepInEx\\_hub_removed).", $"تم حذف {m.Name} و{also.Count} معه (نُقلت إلى BepInEx\\_hub_removed).")
+            : L.T($"Removed {done} of {also.Count + 1}: a file is still in use. Close the game and try again.", $"تم حذف {done} من {also.Count + 1}: ملف لا يزال مستخدماً. سكّر اللعبة وحاول مرة ثانية."));
+        Catalog.Scan();
+        Updates.Refresh();
+    }
+
+    /// <summary>The second step of Remove / Cancel install when other mods came with this one. True when a button was pressed.</summary>
+    private static bool RemoveChoice(Mod m, Rect r, ref float bx, List<Mod> also, Action onlyThis)
+    {
+        bx -= 150f;
+        if (Btn(new Rect(bx, r.y + 15f, 150f, 32f), L.T($"With {also.Count} more", $"مع {also.Count} معه"), _button))
+        { _confirmRemove = null; RemoveWith(m, also); return true; }
+        bx -= 106f;
+        if (Btn(new Rect(bx, r.y + 15f, 100f, 32f), L.T("Only this", "هذا بس"), _button))
+        { _confirmRemove = null; onlyThis(); return true; }
+        return false;
+    }
+
     private static void DrawModRow(Mod m, Rect r)
     {
-        Card(r, m.On ? CardBg : new Color(1f, 0.4f, 0.4f, 0.07f));
+        if (Chunky && m.IsHub) BorderedCard(r, CardBg, Gold, CardRadius, 2f);
+        else if (Chunky && !m.On) BorderedCard(r, PanelBg, new Color(Grey.r, Grey.g, Grey.b, 0.3f), CardRadius, 1.5f);
+        else Card(r, Chunky ? CardBg : m.On ? CardBg : new Color(1f, 0.4f, 0.4f, 0.07f));
         float bx = r.xMax - 8f;
 
         // Buttons (right side): remove, update, on/off
         // Installed a moment ago and not running yet: one press takes it back out (nothing to restart).
-        if (JustInstalled(m))
+        // The half second stops a double click from pressing the button that appears under the mouse.
+        bool confirming = _confirmRemove == m.Id && Time.unscaledTime < _confirmUntil && Time.unscaledTime > _confirmUntil - 5.5f;
+        var cameWith = !m.IsHub && _confirmRemove == m.Id ? Catalog.CameWith(m) : null;
+        if (confirming && cameWith?.Count > 0)
+        {
+            bool just = JustInstalled(m);
+            if (RemoveChoice(m, r, ref bx, cameWith, () => { if (just) CancelInstall(m); else RemoveMod(m); })) return;
+        }
+        else if (JustInstalled(m))
         {
             bx -= 132f;
-            if (Btn(new Rect(bx, r.y + 15f, 132f, 32f), L.T("Cancel install", "ألغِ التثبيت"), _button)) { CancelInstall(m); return; }
+            if (Btn(new Rect(bx, r.y + 15f, 132f, 32f), L.T("Cancel install", "ألغِ التثبيت"), _button))
+            {
+                if (Catalog.CameWith(m).Count == 0) { CancelInstall(m); return; }
+                _confirmRemove = m.Id; _confirmUntil = Time.unscaledTime + 6f;
+            }
         }
         else if (!m.IsHub)
         {
-            bool confirming = _confirmRemove == m.Id && Time.unscaledTime < _confirmUntil && Time.unscaledTime > _confirmUntil - 5.5f;
             bx -= 92f;
-            if (Btn(new Rect(bx, r.y + 15f, 92f, 32f), confirming ? L.T("Sure?", "متأكد؟") : L.T("Remove", "حذف"), _button))
+            if (Btn(new Rect(bx, r.y + 15f, 92f, 32f), confirming ? L.T("Sure?", "متأكد؟") : L.T("Remove", "حذف"), _button, IconTrash))
             {
                 if (confirming)
                 {
-                    bool removed = m.IsCharacter ? Characters.Remove(m) : Catalog.Uninstall(m);
-                    if (removed) History.Add(m.IsCharacter ? History.CharacterRemove : History.Remove, m.Name, m.Version);
-                    if (removed) Toast(L.T($"{m.Name} removed (moved to BepInEx\\_hub_removed).", $"تم حذف {m.Name} (نُقل إلى BepInEx\\_hub_removed)."));
-                    else Toast(L.T($"{m.Name} could not be removed: a file is still in use. Close the game and try again.", $"{m.Name}: تعذر الحذف، ملف لا يزال مستخدماً. سكّر اللعبة وحاول مرة ثانية."));
                     _confirmRemove = null;
-                    Catalog.Scan();
-                    Updates.Refresh();
+                    RemoveMod(m);
                     return;
                 }
                 _confirmRemove = m.Id; _confirmUntil = Time.unscaledTime + 6f;
@@ -609,8 +766,9 @@ internal static partial class Panel
         var ev = Event.current;
         var textArea = new Rect(r.x, r.y, bx - r.x - 8f, r.height);
         bool hoverText = pkg != null && textArea.Contains(ev.mousePosition);
-        if (hoverText) Card(textArea, new Color(1f, 1f, 1f, 0.085f));
+        if (hoverText) Card(textArea, Chunky ? CardHover : new Color(1f, 1f, 1f, 0.085f));
         var iconRect = new Rect(r.x + 6f, r.y + 5f, r.height - 10f, r.height - 10f);
+        if (Chunky) Card(new Rect(iconRect.x - 2.5f, iconRect.y - 2.5f, iconRect.width + 5f, iconRect.height + 5f), InkCol, 7f);
         DrawIcon(iconRect, pkg?.IconUrl);
         float lx = iconRect.xMax + 10f;
 
@@ -644,6 +802,19 @@ internal static partial class Panel
         else if (!m.On && m.LoadedNow) { status = L.T("Turns OFF after restart", "ينطفي بعد إعادة التشغيل"); sc = Gold; }
         else if (m.On) { status = L.T("Running", "شغال الحين"); sc = Green; }
         else { status = L.T("Off", "مطفي"); sc = Grey; }
+        if (m.NeededBy.Count > 0)
+        {
+            string who = string.Join(", ", m.NeededBy.Take(2)) + (m.NeededBy.Count > 2 ? $" +{m.NeededBy.Count - 2}" : "");
+            status += L.T($"  ·  needed by {who}", $"  ·  يحتاجه {who}");
+        }
+        // Another running mod changes the same game function in a way that can clash (see Conflicts).
+        if (Conflicts.For(m) is { Count: > 0 } clashes)
+        {
+            var c = clashes[0];
+            status += L.T($"  ·  may clash with {c.With} ({c.Methods[0]})", $"  ·  ممكن يتعارض مع {c.With} ({c.Methods[0]})")
+                      + (clashes.Count > 1 ? $" +{clashes.Count - 1}" : "");
+            if (sc == Green) sc = Gold; // a hint, not an error: never red
+        }
         if (m.Latest != null) { status += L.T($"  ·  new version {m.Latest}", $"  ·  نسخة جديدة {m.Latest}"); }
         else if (m.LatestUrl != null && m.Version != null) status += L.T("  ·  up to date", "  ·  آخر نسخة");
         Label(new Rect(lx, r.y + 33f, tw, 22f), Fit(status, _small, tw), _small, sc, left: true);
@@ -664,6 +835,7 @@ internal static partial class Panel
 
     private static void DrawGetMods(Event e, Vector2 mouse, Rect body)
     {
+        if (_suggest) { DrawSuggest(e, mouse, body); return; }
         if (_details != null) { DrawDetails(e, mouse, body); return; }
         float x = body.x, y = body.y, w = body.width;
 
@@ -705,7 +877,7 @@ internal static partial class Panel
                 Card(r, CardBg);
                 // Right side: Remove (to the Recycle Bin, after "Sure?"), then Install or why it can't be installed.
                 bool sure = _confirmRemove == d.Path && Time.unscaledTime < _confirmUntil && Time.unscaledTime > _confirmUntil - 5.5f;
-                if (Btn(new Rect(r.xMax - 108f, y + 5f, 100f, 30f), sure ? L.T("Sure?", "متأكد؟") : L.T("Remove", "حذف"), _button))
+                if (Btn(new Rect(r.xMax - 108f, y + 5f, 100f, 30f), sure ? L.T("Sure?", "متأكد؟") : L.T("Remove", "حذف"), _button, IconTrash))
                 {
                     if (sure)
                     {
@@ -736,6 +908,7 @@ internal static partial class Panel
                         else
                         {
                             string folder = Installer.Install(d.Path, d.Check, "Downloads");
+                            if (folder != null) Requirements.Add(d.Check);
                             Toast(folder != null ? L.T($"Installed {d.Check.ModName}. Restart the game to use it.", $"تم تثبيت {d.Check.ModName}. أعد تشغيل اللعبة.")
                                                    + (d.Check.Note != null ? " " + d.Check.Note : "")
                                                  : L.T("Install failed, see the BepInEx log.", "فشل التثبيت، شوف سجل BepInEx."));
@@ -766,6 +939,8 @@ internal static partial class Panel
         string[] sources = { "Thunderstore", "Nexus" };
         for (int i = 0; i < 2 && Edition.Nexus; i++)
             if (Btn(new Rect(x + i * 136f, y, 130f, 30f), sources[i], _nexusList == (i == 1) ? _segment : _button)) { _nexusList = i == 1; _scroll = 0; }
+        // Can't find it? Ask for it (the same page as "Suggest" on Installed mods, set to a mod request).
+        if (Btn(new Rect(x + 280f, y, 180f, 30f), L.T("Request a mod", "اطلب مود"), _button)) { OpenSuggest(true); return; }
         string[] sorts = { L.T("Popular", "الأشهر"), L.T("Newest", "الأحدث"), L.T("Updated", "آخر تحديث") };
         for (int i = 0; i < 3; i++)
             if (Btn(new Rect(x + w - (3 - i) * 116f + 6f, y, 110f, 30f), sorts[i], _sort == i ? _segment : _button)) { _sort = i; _scroll = 0; }
@@ -862,6 +1037,7 @@ internal static partial class Panel
         if (ev.type == EventType.MouseDown && ev.button == 0 && hover && !btn.Contains(ev.mousePosition)) { OpenDetails(p); ev.Use(); return; }
 
         var iconRect = new Rect(r.x + 6f, r.y + 5f, r.height - 10f, r.height - 10f);
+        if (Chunky) Card(new Rect(iconRect.x - 2.5f, iconRect.y - 2.5f, iconRect.width + 5f, iconRect.height + 5f), InkCol, 7f);
         DrawIcon(iconRect, p.IconUrl);
 
         float lx = iconRect.xMax + 10f, tw = btn.x - lx - 12f;
@@ -934,7 +1110,7 @@ internal static partial class Panel
             else if (box.Contains(mouse)) { _searchFocused = true; e.Use(); }
             else _searchFocused = false;
         }
-        BorderedCard(box, _searchFocused ? new Color(0.13f, 0.15f, 0.18f, 1f) : new Color(0.1f, 0.115f, 0.14f, 1f), _searchFocused ? Gold : new Color(1f, 1f, 1f, 0.16f), 8f);
+        BorderedCard(box, _searchFocused ? SearchBgFocus : SearchBg, _searchFocused ? Gold : new Color(1f, 1f, 1f, 0.16f), 8f);
         var text = new Rect(box.x + 10f, box.y + 6f, box.width - 44f, box.height - 8f);
         if (_search.Length == 0 && !_searchFocused) { Label(text, L.T("Click here to search mods...", "اضغط هنا للبحث عن مود..."), _small, Grey); return; }
         bool caret = _searchFocused && (int)(Time.unscaledTime * 2f) % 2 == 0;
@@ -961,11 +1137,22 @@ internal static partial class Panel
 
     private static float _lastPress = -10f;
 
-    private static bool Btn(Rect r, string text, GUIStyle style)
+    private static bool Btn(Rect r, string text, GUIStyle style, int icon = -1)
     {
         bool pad = NavItem(r);
         var look = ButtonLook(r, style); // rounded background (primary, secondary, pill or selected tab)
-        bool hit = GUI.Button(r, new GUIContent(Rtl.Visual(text ?? "", look, 0f)), look) || pad;
+        text ??= "";
+        bool withIcon = false;
+        if (Chunky && !L.Arabic)
+        {
+            // Capitals and an icon only when they fit, so a long label is never cut off.
+            string upper = text.ToUpperInvariant();
+            if (look.CalcSize(new GUIContent(upper)).x <= r.width - 8f) text = upper;
+            if (icon >= 0 && look.CalcSize(new GUIContent("     " + text)).x <= r.width - 8f) { text = "     " + text; withIcon = true; }
+        }
+        bool hit = GUI.Button(r, new GUIContent(Rtl.Visual(text, look, 0f)), look) || pad;
+        if (withIcon)
+            IconAt(icon, new Rect(r.center.x - look.CalcSize(new GUIContent(text)).x / 2f, r.center.y - 7f, 14f, 14f), look.normal.textColor);
         if (!hit) return false;
         // One press at a time: a click that arrives twice (or a stuck mouse event) must never turn many pages
         // or confirm a "Sure?" by itself.
@@ -1021,6 +1208,7 @@ internal static partial class Panel
         _white.SetPixel(0, 0, Color.white);
         _white.Apply();
         _title = Make(GUI.skin.label, 24, FontStyle.Bold);
+        if (Chunky && !L.Arabic && TitleFont() != null) { _title.font = _titleFont; _title.fontStyle = FontStyle.Normal; _title.fontSize = 26; }
         _sub = Make(GUI.skin.label, 17, FontStyle.Normal, wrap: true);
         _row = Make(GUI.skin.label, 16, FontStyle.Bold);
         _small = Make(GUI.skin.label, 13, FontStyle.Normal);
@@ -1068,8 +1256,9 @@ internal static class InputGuard
 {
     private static bool _players, _ui;
     private static readonly List<Player> Paused = new();
-    private static BaseInputModule _module;
-    private static bool _moduleWasEnabled;
+    private static readonly List<BaseInputModule> Stopped = new(); // menu input we switched off, to switch back on
+    private static float _nextUiCheck;
+    private static readonly HashSet<string> Logged = new();
 
     public static void Update(bool blockPlayers, bool blockUi)
     {
@@ -1093,25 +1282,38 @@ internal static class InputGuard
             }
             catch (Exception e) { Panel.LogOnce("Input guard (players)", e); }
         }
-        if (blockUi != _ui)
+        // Menus: switch off the part of every EventSystem that reads the mouse and keys, so a click on the Hub never
+        // also presses a game button behind it. Disabling the whole EventSystem makes the game's UiFocusManager throw
+        // an error every frame (it expects EventSystem.current to exist). Checked again twice a second while open:
+        // the game (or a mod like a multiplayer menu) can make a new EventSystem or switch its module back on.
+        if (blockUi && _ui)
+            foreach (var m in Stopped) // switched back on by the game since the last check: off again right away
+                try { if (m != null && !m.WasCollected && m.enabled) m.enabled = false; } catch { }
+        if (blockUi && (!_ui || Time.unscaledTime >= _nextUiCheck))
         {
-            _ui = blockUi;
+            bool first = !_ui;
+            _ui = true;
+            _nextUiCheck = Time.unscaledTime + 0.5f;
             try
             {
-                if (blockUi)
+                var found = new List<string>();
+                foreach (var m in UnityEngine.Object.FindObjectsOfType<BaseInputModule>())
                 {
-                    // Switch off only the part that reads mouse and keys. Disabling the whole EventSystem makes the
-                    // game's UiFocusManager throw an error every frame (it expects EventSystem.current to exist).
-                    _module = EventSystem.current != null ? EventSystem.current.currentInputModule : null;
-                    if (_module != null) { _moduleWasEnabled = _module.enabled; _module.enabled = false; }
+                    if (m == null || !m.enabled) continue;
+                    m.enabled = false;
+                    if (!Stopped.Contains(m)) { Stopped.Add(m); found.Add(m.GetType().Name + " on " + m.gameObject.name); }
                 }
-                else
-                {
-                    if (_module != null && !_module.WasCollected) _module.enabled = _moduleWasEnabled;
-                    _module = null;
-                }
+                if (found.Count > 0 && (first || Logged.Add(string.Join(",", found))))
+                    Plugin.Logger.LogDebug($"Input guard: menus paused ({string.Join(", ", found)}).");
             }
             catch (Exception e) { Panel.LogOnce("Input guard (menus)", e); }
+        }
+        else if (!blockUi && _ui)
+        {
+            _ui = false;
+            foreach (var m in Stopped)
+                try { if (m != null && !m.WasCollected) m.enabled = true; } catch { }
+            Stopped.Clear();
         }
     }
 }

@@ -15,7 +15,10 @@ internal sealed class Mod
     public string Path;               // full path of the folder / file
     public bool IsFolder;
     public string Name, Version, Guid;
+    public List<string> Guids = new();  // every plugin in this mod (a folder can hold more than one)
     public List<string> Dependencies = new();
+    public List<string> NeededBy = new(); // mods that need this one
+    public List<string> InstalledFor = new(); // what it came along for as a requirement (a modpack counts)
     public Loader Loader = Loader.Unknown;
     public bool On;                   // files are enabled on disk (takes effect at next launch)
     public bool LoadedNow;            // running in this session
@@ -55,6 +58,7 @@ internal static class Catalog
         public List<string> VanillaRestore { get; set; }           // mods to turn back on when leaving vanilla mode
         public Dictionary<string, string> Sources { get; set; } = new(); // mod id -> where it was installed from
         public Dictionary<string, string> PackageVersions { get; set; } = new(); // mod id -> Thunderstore version installed (a mod's own version can lag behind)
+        public Dictionary<string, List<string>> NeededBy { get; set; } = new(); // mod id -> mods it was installed for
         public Dictionary<string, List<string>> Profiles { get; set; } = new(); // profile name -> mod ids that are on
         public Dictionary<string, Swap> Swaps { get; set; } = new();          // mod id -> the other version kept after an update
     }
@@ -100,6 +104,60 @@ internal static class Catalog
         SaveState();
     }
 
+    /// <summary>This mod is here because another one needs it (it came along as a requirement).</summary>
+    public static void NoteNeededBy(string id, string mod)
+    {
+        lock (StateLock)
+        {
+            if (!_state.NeededBy.TryGetValue(id, out var list)) _state.NeededBy[id] = list = new List<string>();
+            if (list.Contains(mod)) return;
+            list.Add(mod);
+        }
+        SaveState();
+    }
+
+    /// <summary>
+    /// Who needs each mod: what it was installed for (a package's requirements aren't always in its DLLs), plus every
+    /// mod whose DLLs ask for it. A modpack has no row of its own, so what it was installed for can't depend on one.
+    /// </summary>
+    private static void FillNeededBy(List<Mod> list)
+    {
+        foreach (var m in list)
+        {
+            lock (StateLock)
+                if (_state.NeededBy.TryGetValue(m.Id, out var asked)) m.InstalledFor.AddRange(asked);
+            m.NeededBy.AddRange(m.InstalledFor);
+            foreach (var x in list)
+                if (x != m && !x.IsMelon && !x.IsHub && x.Dependencies.Any(m.Guids.Contains) && !m.NeededBy.Any(n => Named(x, n))) m.NeededBy.Add(x.Name);
+        }
+    }
+
+    /// <summary>Is this the mod called that? (A name may be the plugin's or its Thunderstore package's.)</summary>
+    private static bool Named(Mod m, string name) =>
+        Updates.Same(m.Name, name) || (m.Source?.EndsWith("-" + name.Replace(' ', '_'), StringComparison.OrdinalIgnoreCase) ?? false);
+
+    /// <summary>A mod is gone: what it brought along no longer stays for it.</summary>
+    public static void ForgetNeededBy(Mod gone)
+    {
+        lock (StateLock)
+            foreach (var list in _state.NeededBy.Values) list.RemoveAll(n => Named(gone, n));
+        SaveState();
+    }
+
+    /// <summary>
+    /// What can go together with this mod. For a main mod: what came along for it, unless something else needs that too.
+    /// For a mod from a modpack (a pack has no row to remove): the other mods of the pack.
+    /// </summary>
+    public static List<Mod> CameWith(Mod m)
+    {
+        var mods = Mods;
+        var own = mods.Where(x => x != m && !x.IsHub && x.InstalledFor.Any(n => Named(m, n)) && x.NeededBy.All(n => Named(m, n))).ToList();
+        if (own.Count > 0 || m.InstalledFor.Count == 0) return own;
+        string pack = m.InstalledFor[0];
+        if (mods.Any(x => Named(x, pack))) return own; // a real main mod still needs this one: nothing goes along with it
+        return mods.Where(x => x != m && !x.IsHub && x.InstalledFor.Contains(pack) && x.NeededBy.All(n => n == pack)).ToList();
+    }
+
     private static readonly HashSet<string> InstalledThisSession = new(StringComparer.OrdinalIgnoreCase);
     public static void NoteInstalled(string id)
     {
@@ -114,7 +172,12 @@ internal static class Catalog
     public static readonly List<string> Cleaned = new();
 
     /// <summary>Re-reads the plugins folder. Old duplicate copies of a mod are moved to _hub_removed automatically.</summary>
-    public static void Scan() => Scan(true);
+    public static void Scan()
+    {
+        var time = System.Diagnostics.Stopwatch.StartNew();
+        Scan(true);
+        Plugin.Logger.LogDebug($"Scanned {Mods.Count} mods in {time.ElapsedMilliseconds} ms.");
+    }
 
     private static void Scan(bool cleanDuplicates)
     {
@@ -144,6 +207,8 @@ internal static class Catalog
             var twin = list.FirstOrDefault(b => !b.IsMelon && b.On && SameName(b.Name, m.Name));
             if (twin != null) { m.Twin = twin.Name; twin.Twin = m.Name; }
         }
+
+        FillNeededBy(list);
 
         // Same mod installed twice (same GUID, two folders): keep the running / newest one, flag the others.
         foreach (var group in list.Where(m => m.Guid != null).GroupBy(m => m.Guid).Where(g => g.Count() > 1))
@@ -193,6 +258,7 @@ internal static class Catalog
             if (meta == null) continue;
             if (meta.Loader != Loader.Unknown && mod.Loader == Loader.Unknown) mod.Loader = meta.Loader;
             if (meta.Guid == null && meta.Name == null) continue;
+            if (meta.Guid != null) mod.Guids.Add(meta.Guid);
             mod.Name ??= meta.Name;
             mod.Version ??= meta.Version;
             mod.Guid ??= meta.Guid;
@@ -524,21 +590,64 @@ internal static class Catalog
 
     // ------------------------------------------------------------------ uninstall
 
-    /// <summary>Moves a mod out of plugins (into BepInEx\_hub_removed), so it can be put back by hand.</summary>
-    public static bool Uninstall(Mod mod)
+    public static bool Uninstall(Mod mod) => Uninstall(mod, out _);
+
+    /// <summary>Moves a mod out of plugins (into BepInEx\_hub_removed). History's Put back can restore it from <paramref name="target"/>.</summary>
+    public static bool Uninstall(Mod mod, out string target)
     {
+        target = null;
         if (mod.IsHub) return false;
         try
         {
             Directory.CreateDirectory(RemovedDir);
             string stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
-            string target = System.IO.Path.Combine(RemovedDir, $"{mod.Id}-{stamp}" + (mod.IsFolder ? "" : System.IO.Path.GetExtension(mod.Path)));
+            target = System.IO.Path.Combine(RemovedDir, $"{mod.Id}-{stamp}" + (mod.IsFolder ? "" : System.IO.Path.GetExtension(mod.Path)));
             if (mod.IsFolder) Directory.Move(mod.Path, target); else File.Move(mod.Path, target);
-            lock (StateLock) { _state.Sources.Remove(mod.Id); _state.PackageVersions.Remove(mod.Id); _state.Swaps.Remove(mod.Id); }
+            lock (StateLock) { _state.Sources.Remove(mod.Id); _state.PackageVersions.Remove(mod.Id); _state.Swaps.Remove(mod.Id); _state.NeededBy.Remove(mod.Id); }
             SaveState();
             Plugin.Logger.LogInfo($"{mod.Name}: uninstalled (moved to {target}).");
             return true;
         }
         catch (Exception e) { Plugin.Logger.LogWarning($"Could not uninstall {mod.Name}: {e.Message}"); return false; }
+    }
+
+    /// <summary>History's Put back: returns a removed mod or character to where it was, ON or OFF as it was. False with the reason in <paramref name="problem"/>.</summary>
+    public static bool PutBack(HistoryEntry h, out string problem)
+    {
+        problem = null;
+        try
+        {
+            if (!History.CanPutBack(h))
+            {
+                problem = L.T("its copy is gone from _hub_removed", "نسخته راحت من _hub_removed");
+                return false;
+            }
+            bool character = h.Kind == History.CharacterRemove;
+            // Never overwrite: the same mod may have been installed again since.
+            if (Directory.Exists(h.Original) || File.Exists(h.Original) || (h.Guid != null && Mods.Any(m => m.Guids.Contains(h.Guid)))
+                || (character && Mods.Any(m => m.IsCharacter && m.Name == h.Name)))
+            {
+                problem = L.T("it's already installed", "هو مثبت أصلا");
+                return false;
+            }
+            if (character) Characters.PutBack(h);
+            else
+            {
+                Directory.CreateDirectory(System.IO.Path.GetDirectoryName(h.Original));
+                if (h.Folder) Directory.Move(h.Stored, h.Original); else File.Move(h.Stored, h.Original);
+            }
+            if (h.Source != null) SetSource(h.Id, h.Source, h.PackageVersion);
+            if (h.For != null) NoteNeededBy(h.Id, h.For);
+            lock (FolderVersions) FolderVersions.Clear(); // a folder's files changed: read versions again
+            History.MarkPutBack(h);
+            Plugin.Logger.LogInfo($"{h.Name}: put back (from {h.Stored}).");
+            return true;
+        }
+        catch (Exception e)
+        {
+            Plugin.Logger.LogWarning($"Could not put {h.Name} back: {e.Message}");
+            problem = L.T("a file is in use", "ملف مستخدم");
+            return false;
+        }
     }
 }
